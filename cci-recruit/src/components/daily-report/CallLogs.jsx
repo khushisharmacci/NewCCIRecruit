@@ -1,16 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
+import { Phone, Plus, Pencil, Trash2, Search, UserPlus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import {
-  Phone,
-  Plus,
-  Pencil,
-  Trash2,
-  Building2,
-  Briefcase,
-  Check,
-} from "lucide-react";
-
-import CandidateInput from "./CandidateInput";
+import { useAuth } from "@/lib/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -19,127 +14,192 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { syncCallLog } from "@/lib/callLogSync/index";
 
 export default function CallLogs({
   callLogs = [],
   setCallLogs,
   readOnly = false,
-
-  candidates = [],
-  clients = [],
-  positions = [],
 }) {
-  console.log("CALL LOG CLIENTS", clients);
-  console.log("CALL LOG POSITIONS", positions);
-  const emptyForm = {
-  person_name: "",
-  phone_number: "",
-  discussion_notes: "",
-  company_name: "",
-  position_title: "",
-  candidate_id: "",
+  const { user } = useAuth();
+  const companyId = user?.company_id;
 
-  spreadsheet_id: "",
-  spreadsheet_fields: {},
-};
+  const emptyForm = {
+    person_name: "",
+    phone_number: "",
+    discussion_notes: "",
+    company_id: "",
+    position_title: "",
+    candidate_id: null,
+  };
 
   const [editing, setEditing] = useState(-1);
   const [form, setForm] = useState(emptyForm);
-  const [errors, setErrors] = useState({});
-  const [saving, setSaving] = useState(false);
-  const [spreadsheetColumns, setSpreadsheetColumns] = useState([]);
-  const [spreadsheetFiles, setSpreadsheetFiles] = useState([]);
-  const [spreadsheetId, setSpreadsheetId] = useState("");
-  const [spreadsheetValues, setSpreadsheetValues] = useState({});
+  
+  // Dynamic UI States
+  const [nameSearch, setNameSearch] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedSpreadsheetId, setSelectedSpreadsheetId] = useState("");
+  const [spreadsheetFields, setSpreadsheetFields] = useState({});
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-  loadSpreadsheets();
-}, []);
+  // ─── DB Queries ──────────────────────────────────────────────────────────
 
-async function loadSpreadsheets() {
-  const { data, error } = await supabase
-    .from("data_files")
-    .select("id,name,columns");
+  // 1. Fetch Spreadsheets (DataFiles)
+  const { data: spreadsheets = [] } = useQuery({
+    queryKey: ["candidate-spreadsheets", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("data_files")
+        .select("id, name, columns")
+        .eq("entity_type", "Candidate");
 
-  if (!error) {
-    setSpreadsheetFiles(data || []);
-  }
-}
-
-async function handleSpreadsheetSelect(fileId) {
-  setForm((prev) => ({
-    ...prev,
-    spreadsheet_id: fileId,
-    spreadsheet_fields: {},
-  }));
-
-  const selected = spreadsheetFiles.find(
-    (f) => f.id === fileId
-  );
-
-  if (!selected) {
-    setSpreadsheetColumns([]);
-    return;
-  }
-
-  setSpreadsheetColumns(selected.columns || []);
-}
-
-function updateSpreadsheetField(header, value) {
-  setForm((prev) => ({
-    ...prev,
-    spreadsheet_fields: {
-      ...prev.spreadsheet_fields,
-      [header]: value,
+      if (error) throw error;
+      return data || [];
     },
-  }));
-}
+    enabled: !!companyId,
+  });
+
+  // 2. Fetch Candidates list for suggestions lookup
+  const { data: candidates = [] } = useQuery({
+    queryKey: ["candidates-suggestions", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("candidates")
+        .select("id, full_name, phone, email, position, data_file_id");
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!companyId,
+  });
+
+  // 3. Fetch Clients (Companies)
+  const { data: companies = [] } = useQuery({
+  queryKey: ["clients-suggestions", companyId],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from("clients")
+      .select("id, company_name");
+
+    if (error) throw error;
+    return data || [];
+  },
+  enabled: !!companyId,
+});
+
+  // 4. Fetch Job Positions
+  const { data: positions = [] } = useQuery({
+  queryKey: ["position-suggestions", companyId],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from("positions")
+      .select("*");
+
+    if (error) throw error;
+
+    console.log("Positions:", data);
+
+    return data || [];
+  },
+  enabled: !!companyId,
+});
+
+  // ─── Suggestions Filtering ──────────────────────────────────────────────
+  const filteredCandidates = nameSearch.trim()
+    ? candidates.filter((c) =>
+        c.full_name?.toLowerCase().includes(nameSearch.toLowerCase())
+      )
+    : [];
+
+  const selectedCompany = companies.find((c) => c.id === form.company_id);
+
+const filteredPositions = selectedCompany
+  ? positions.filter((p) => p.company_id === selectedCompany.id)
+  : [];
+
+  const activeSpreadsheet = spreadsheets.find((s) => s.id === selectedSpreadsheetId);
+  const spreadsheetColumns = activeSpreadsheet?.columns || [];
+
+  // Initialize nameSearch when form updates (e.g. edit log)
+  useEffect(() => {
+    setNameSearch(form.person_name);
+  }, [form.person_name]);
 
   const startAdd = () => {
     setForm(emptyForm);
+    setNameSearch("");
+    setSelectedSpreadsheetId("");
+    setSpreadsheetFields({});
     setEditing(-2);
   };
 
   const startEdit = (index) => {
-    setForm(callLogs[index]);
+    const log = callLogs[index];
+    setForm({
+      person_name: log.person_name || "",
+      phone_number: log.phone_number || "",
+      discussion_notes: log.discussion_notes || "",
+      company_id: log.company_id || "",
+      position_title: log.position_title || "",
+      candidate_id: log.candidate_id || null,
+    });
+    setNameSearch(log.person_name || "");
+    setSelectedSpreadsheetId(log.spreadsheet_id || "");
+    setSpreadsheetFields(log.spreadsheet_fields || {});
     setEditing(index);
   };
 
-  const handleSave = () => {
-    const errs = {};
+  const handleSave = async () => {
+    if (!form.person_name.trim()) return;
 
-if (!form.person_name.trim())
-  errs.person_name = "Required";
+    setSubmitting(true);
+    try {
+      // 1. Trigger the sync module to save to candidates and data_files
+      const syncedCandidate = await syncCallLog({
+        company_id: companyId,
+        person_name: form.person_name,
+        phone_number: form.phone_number,
+        position_title: form.position_title,
+        discussion_notes: form.discussion_notes,
+        candidate_id: form.candidate_id || null,
+        spreadsheet_id: selectedSpreadsheetId || null,
+        spreadsheet_fields: spreadsheetFields,
+      });
 
-if (!form.phone_number.trim())
-  errs.phone_number = "Required";
+      const savedCandidateId = form.candidate_id || (syncedCandidate ? syncedCandidate.id : null);
 
-if (!form.company_name)
-  errs.company_name = "Required";
+      // 2. Build the local Call Log object to save on daily report state
+      const savedLog = {
+        person_name: form.person_name,
+        phone_number: form.phone_number,
+        discussion_notes: form.discussion_notes,
+        company_id: form.company_id || null,
+        position_title: form.position_title || null,
+        candidate_id: savedCandidateId,
+        spreadsheet_id: selectedSpreadsheetId || null,
+        spreadsheet_fields: spreadsheetFields,
+      };
 
-if (!form.position_title)
-  errs.position_title = "Required";
+      if (editing === -2) {
+        setCallLogs((prev) => [...prev, savedLog]);
+      } else {
+        setCallLogs((prev) =>
+          prev.map((item, index) => (index === editing ? savedLog : item))
+        );
+      }
 
-setErrors(errs);
-
-if (Object.keys(errs).length) return;
-
-    if (editing === -2) {
-      setCallLogs((prev) => [...prev, form]);
-    } else {
-      setCallLogs((prev) =>
-        prev.map((item, index) =>
-          index === editing ? form : item
-        )
-      );
+      setEditing(-1);
+      setForm(emptyForm);
+      setNameSearch("");
+      setSelectedSpreadsheetId("");
+      setSpreadsheetFields({});
+    } catch (err) {
+      console.error(err);
+      alert("Failed to sync call log candidate record: " + err.message);
+    } finally {
+      setSubmitting(false);
     }
-
-    setEditing(-1);
-    setForm(emptyForm);
   };
 
   const handleDelete = (index) => {
@@ -149,30 +209,21 @@ if (Object.keys(errs).length) return;
   const handleCancel = () => {
     setEditing(-1);
     setForm(emptyForm);
+    setNameSearch("");
+    setSelectedSpreadsheetId("");
+    setSpreadsheetFields({});
   };
-  console.log("POSITIONS", positions);
-  console.log("SELECTED COMPANY", form.company_name);
 
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="flex items-center gap-2 font-semibold">
-  <Phone className="h-5 w-5 text-primary" />
-  Call Logs
-
-  {callLogs.length > 0 && (
-    <span className="ml-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">
-      {callLogs.length}
-    </span>
-  )}
-</h3>
+          <Phone className="h-5 w-5 text-primary" />
+          Call Logs
+        </h3>
 
         {!readOnly && editing === -1 && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={startAdd}
-          >
+          <Button size="sm" variant="outline" onClick={startAdd}>
             <Plus className="mr-1 h-4 w-4" />
             Add Call Log
           </Button>
@@ -180,273 +231,207 @@ if (Object.keys(errs).length) return;
       </div>
 
       {editing !== -1 && !readOnly && (
-        <div className="mb-4 space-y-3 rounded-lg border border-border bg-muted/50 p-4">
+        <div className="mb-4 space-y-4 rounded-lg border border-border bg-muted/50 p-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-  <Label className="mb-1 block text-xs">
-    Person Name *
-  </Label>
-
-  <CandidateInput
-  value={form.person_name}
-  candidateId={form.candidate_id}
-  candidates={candidates}
-  onChange={(name, id) => {
-    setForm((prev) => ({
-      ...prev,
-      person_name: name,
-      candidate_id: id || "",
-    }));
-
-    setErrors((prev) => ({
-      ...prev,
-      person_name: undefined,
-    }));
-  }}
-/>
-
-  {errors.person_name && (
-    <p className="mt-1 text-xs text-red-500">
-      {errors.person_name}
-    </p>
-  )}
-</div>
-
-   <Input
-  placeholder="Phone Number"
-  value={form.phone_number}
-  className={errors.phone_number ? "border-red-500" : ""}
-  onChange={(e) => {
-    setForm((prev) => ({
-      ...prev,
-      phone_number: e.target.value,
-    }));
-
-    setErrors((prev) => ({
-      ...prev,
-      phone_number: undefined,
-    }));
-  }}
-/>
-
-{errors.phone_number && (
-  <p className="mt-1 text-xs text-red-500">
-    {errors.phone_number}
-  </p>
-)}
-            <div>
-  <Label className="mb-1 block text-xs">
-    Company *
-  </Label>
-
-  <Select
-    value={form.company_name}
-    onValueChange={(value) => {
-      setForm((prev) => ({
-        ...prev,
-        company_name: value,
-        position_title: "",
-      }));
-
-      setErrors((prev) => ({
-        ...prev,
-        company_name: undefined,
-        position_title: undefined,
-      }));
-    }}
-  >
-    <SelectTrigger
-      className={errors.company_name ? "border-red-500" : ""}
-    >
-      <SelectValue placeholder="Select company" />
-    </SelectTrigger>
-
-    <SelectContent>
-      {clients.map((client) => (
-        <SelectItem
-        key={client.id}
-        value={client.id}
-       >
-       {client.name}
-       </SelectItem>
-      ))}
-    </SelectContent>
-  </Select>
-
-  {errors.company_name && (
-    <p className="mt-1 text-xs text-red-500">
-      {errors.company_name}
-    </p>
-  )}
-</div>
-<div>
-  <Label className="mb-1 block text-xs">
-    Position *
-  </Label>
-
-  <Select
-    value={form.position_title}
-    onValueChange={(value) => {
-      setForm((prev) => ({
-        ...prev,
-        position_title: value,
-      }));
-
-      setErrors((prev) => ({
-        ...prev,
-        position_title: undefined,
-      }));
-    }}
-    disabled={!form.company_name}
-  >
-    <SelectTrigger
-      className={errors.position_title ? "border-red-500" : ""}
-    >
-      <SelectValue
-        placeholder={
-          form.company_name
-            ? "Select position"
-            : "Select company first"
-        }
-      />
-    </SelectTrigger>
-
-    <SelectContent>
-      {positions
-  .filter(
-    (position) =>
-      position.company_id === form.company_name
-  )
-        .map((position) => (
-          <SelectItem
-            key={position.id}
-            value={position.title}
-          >
-            {position.title}
-          </SelectItem>
-        ))}
-    </SelectContent>
-  </Select>
-
-  {errors.position_title && (
-    <p className="mt-1 text-xs text-red-500">
-      {errors.position_title}
-    </p>
-  )}
-</div>
-          </div>
-{!form.candidate_id && (
-  <div>
-    <Label className="mb-1 block text-xs">
-      Select Spreadsheet
-    </Label>
-
-    <Select
-      value={form.spreadsheet_id}
-      onValueChange={handleSpreadsheetSelect}
-    >
-      <SelectTrigger>
-        <SelectValue placeholder="Choose spreadsheet" />
-      </SelectTrigger>
-
-      <SelectContent>
-        {spreadsheetFiles.map((file) => (
-          <SelectItem
-            key={file.id}
-            value={file.id}
-          >
-            {file.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </div>
-)}
-
-{!form.candidate_id &&
-  form.spreadsheet_id &&
-  spreadsheetColumns.length > 0 && (
-    <div className="space-y-3 rounded-lg border border-border p-3">
-      <Label className="text-sm font-semibold">
-        Spreadsheet Details
-      </Label>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {spreadsheetColumns
-          .filter(
-  (header) =>
-    ![
-      "_candidate_id",
-      "_row_id",
-      "id",
-      "Name",
-      "Candidate Name",
-      "Full Name",
-      "Phone",
-      "Phone Number",
-      "Mobile",
-      "Company",
-      "Current Company",
-      "Position",
-      "Position Title",
-      "Discussion Notes",
-      "Remarks",
-    ]
-      .map((x) => x.toLowerCase())
-      .includes(String(header).toLowerCase())
-)
-          .map((header) => (
-            <div key={header}>
-              <Label className="mb-1 block text-xs">
-                {header}
-              </Label>
-
+            
+            {/* Person Name Suggestion Box */}
+            <div className="relative space-y-1">
+              <div className="flex justify-between items-center">
+                <Label className="text-xs">Person Name *</Label>
+                {form.candidate_id ? (
+                  <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.2 rounded font-medium">
+                    Existing Candidate
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.2 rounded font-medium">
+                    New Candidate
+                  </span>
+                )}
+              </div>
               <Input
-                value={
-                  form.spreadsheet_fields?.[header] || ""
-                }
+                placeholder="Type a name or select existing candidate"
+                value={nameSearch}
+                onChange={(e) => {
+                  setNameSearch(e.target.value);
+                  setForm((prev) => ({
+                    ...prev,
+                    person_name: e.target.value,
+                    candidate_id: null, // Reset candidate ID on edit to treat as new unless clicked
+                  }));
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+              />
+              {showSuggestions && filteredCandidates.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                  {filteredCandidates.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-muted/80 transition-colors flex justify-between items-center border-b border-border last:border-0"
+                      onClick={() => {
+                        setForm((prev) => ({
+                          ...prev,
+                          person_name: c.full_name,
+                          phone_number: c.phone || "",
+                          position_title: c.position || "",
+                          candidate_id: c.id,
+                        }));
+                        setNameSearch(c.full_name);
+                        setShowSuggestions(false);
+                      }}
+                    >
+                      <div>
+                        <p className="font-medium text-xs">{c.full_name}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {c.email || "No email"}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-primary font-medium hover:underline">Select</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Phone Number */}
+            <div className="space-y-1">
+              <Label className="text-xs">Phone Number</Label>
+              <Input
+                placeholder="Phone Number"
+                value={form.phone_number}
                 onChange={(e) =>
-                  updateSpreadsheetField(
-                    header,
-                    e.target.value
-                  )
+                  setForm((prev) => ({
+                    ...prev,
+                    phone_number: e.target.value,
+                  }))
                 }
               />
             </div>
-          ))}
-      </div>
-    </div>
-)}
 
-          <Textarea
-  className="min-h-[80px]"
-  placeholder="Discussion Notes"
-  value={form.discussion_notes}
-  onChange={(e) =>
-    setForm((prev) => ({
-      ...prev,
-      discussion_notes: e.target.value,
-    }))
-  }
-/>
+            {/* Company Selection */}
+            <div className="space-y-1">
+              <Label className="text-xs">Company *</Label>
+              <Select
+                value={form.company_id}
+                onValueChange={(val) =>
+                  setForm((prev) => ({ ...prev, company_id: val, position_title: "" }))
+                }
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select company" />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Position Selection */}
+            <div className="space-y-1">
+              <Label className="text-xs">Position *</Label>
+              <Select
+                value={form.position_title}
+                onValueChange={(val) =>
+                  setForm((prev) => ({ ...prev, position_title: val }))
+                }
+                disabled={!form.company_id}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder={form.company_id ? "Select position" : "Select company first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredPositions.map((p) => (
+                    <SelectItem key={p.id} value={p.title}>
+                      {p.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+          </div>
+
+          {/* Dynamic Spreadsheet Dropdown (Only for New Candidate flow) */}
+          {!form.candidate_id && (
+            <div className="space-y-3 pt-1">
+              <div className="space-y-1">
+                <Label className="text-xs">Select Spreadsheet (for new candidate)</Label>
+                <Select
+                  value={selectedSpreadsheetId}
+                  onValueChange={(val) => {
+                    setSelectedSpreadsheetId(val);
+                    setSpreadsheetFields({});
+                  }}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Choose a spreadsheet to store this candidate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {spreadsheets.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Dynamically Populated Columns */}
+              {selectedSpreadsheetId && spreadsheetColumns.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border border-border/60 p-3 rounded-lg bg-card/60">
+                  <p className="sm:col-span-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Spreadsheet Custom Fields
+                  </p>
+                  {spreadsheetColumns
+                    .filter((col) => !["__id", "_candidate_id", "_row_id"].includes(col))
+                    .map((col) => (
+                      <div key={col} className="space-y-1">
+                        <Label className="text-[11px] font-medium">{col}</Label>
+                        <Input
+                          placeholder={`Enter ${col}`}
+                          className="h-8 text-xs"
+                          value={spreadsheetFields[col] || ""}
+                          onChange={(e) =>
+                            setSpreadsheetFields((prev) => ({
+                              ...prev,
+                              [col]: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Discussion Notes / Remarks */}
+          <div className="space-y-1">
+            <Label className="text-xs">Discussion Notes / Remarks</Label>
+            <Textarea
+              className="min-h-[85px]"
+              placeholder="Discussion notes — will sync to Candidate Remarks and Spreadsheet Remarks"
+              value={form.discussion_notes}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  discussion_notes: e.target.value,
+                }))
+              }
+            />
+          </div>
 
           <div className="flex gap-2">
-            <Button
-  onClick={handleSave}
-  disabled={saving}
->
-              {saving
-  ? "Saving..."
-  : editing === -2
-  ? "Add"
-  : "Update"}
+            <Button onClick={handleSave} disabled={submitting}>
+              {submitting ? "Saving..." : editing === -2 ? "Add" : "Update"}
             </Button>
 
-            <Button
-  variant="outline"
-  onClick={handleCancel}
-  disabled={saving}
->
+            <Button variant="outline" onClick={handleCancel} disabled={submitting}>
               Cancel
             </Button>
           </div>
@@ -470,23 +455,14 @@ if (Object.keys(errs).length) return;
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-  <p className="text-sm font-medium">
-    {log.person_name}
-  </p>
+                  <p className="text-sm font-medium">{log.person_name}</p>
 
-  {log.phone_number && (
-    <span className="text-xs text-muted-foreground">
-      {log.phone_number}
-    </span>
-  )}
-
-  {log.candidate_id && (
-    <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-500">
-      <Check className="h-3 w-3" />
-      Linked Candidate
-    </span>
-  )}
-</div>
+                  {log.phone_number && (
+                    <span className="text-xs text-muted-foreground">
+                      {log.phone_number}
+                    </span>
+                  )}
+                </div>
 
                 {log.discussion_notes && (
                   <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">

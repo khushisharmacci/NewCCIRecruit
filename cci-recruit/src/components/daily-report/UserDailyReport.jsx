@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import ReportCalendar from "./ReportCalendar";
 import ReportEditor from "./ReportEditor";
 import { supabase } from "@/lib/supabase";
-import { syncCallLogToSpreadsheet } from "@/lib/spreadsheetSync";
+import { syncCallLog } from "@/lib/callLogSync";
 
 export default function UserDailyReport() {
   const { user } = useAuth();
@@ -199,6 +199,8 @@ const logs = callLogs.map(log => ({
   position_title: log.position_title || null,
 
   discussion_notes: log.discussion_notes,
+
+  candidate_id: log.candidate_id || null,
 }));
 console.log("LOGS TO SAVE", logs);
 const { error } = await supabase
@@ -208,10 +210,14 @@ const { error } = await supabase
 if (error) throw error;
 console.log("STARTING SPREADSHEET SYNC");
 
-for (const log of logs) {
+for (const log of callLogs) {
   console.log("SYNCING LOG:", log);
 
-  await syncCallLogToSpreadsheet(log);
+  await syncCallLog({
+    ...log,
+    report_id: reportId,
+    company_id: companyId,
+  });
 
   console.log("SYNC COMPLETE");
 }
