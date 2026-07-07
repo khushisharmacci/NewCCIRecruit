@@ -1,0 +1,57 @@
+{
+  "name": "ChatMessage",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID"
+    },
+    "conversation_id": {
+      "type": "string"
+    },
+    "sender_id": {
+      "type": "string"
+    },
+    "sender_name": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "message_type": {
+      "type": "string",
+      "enum": [
+        "text",
+        "file",
+        "image"
+      ],
+      "default": "text"
+    },
+    "file_url": {
+      "type": "string"
+    },
+    "file_name": {
+      "type": "string"
+    },
+    "file_type": {
+      "type": "string"
+    },
+    "mentions": {
+      "type": "string",
+      "description": "JSON array of mentioned user IDs"
+    },
+    "read_by": {
+      "type": "string",
+      "description": "JSON array of user IDs who read this message"
+    },
+    "is_deleted": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "conversation_id",
+    "sender_id",
+    "sender_name"
+  ]
+}

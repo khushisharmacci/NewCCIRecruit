@@ -1,0 +1,51 @@
+{
+  "name": "Notification",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "title": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "Interview",
+        "Follow-up",
+        "Offer",
+        "Target",
+        "Lead",
+        "General",
+        "Event",
+        "Chat"
+      ],
+      "default": "General"
+    },
+    "read": {
+      "type": "boolean",
+      "default": false
+    },
+    "link": {
+      "type": "string"
+    },
+    "recipient_id": {
+      "type": "string",
+      "description": "User ID of the notification recipient"
+    },
+    "sender_name": {
+      "type": "string"
+    },
+    "event_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "message"
+  ]
+}

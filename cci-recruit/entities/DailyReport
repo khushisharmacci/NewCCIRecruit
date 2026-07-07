@@ -1,0 +1,33 @@
+{
+  "name": "DailyReport",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "user_id": {
+      "type": "string",
+      "description": "Owner user ID"
+    },
+    "user_name": {
+      "type": "string"
+    },
+    "report_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "work_summary": {
+      "type": "string"
+    
+    },
+    "attachments": {
+      "type": "string",
+      "description": "JSON array of attachment objects (file_name, file_type, file_size, storage_path, public_url)"
+    }
+  },
+  "required": [
+    "user_id",
+    "report_date"
+  ]
+}

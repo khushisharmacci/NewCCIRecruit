@@ -1,0 +1,80 @@
+{
+  "name": "Interview",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "candidate_name": {
+      "type": "string"
+    },
+    "candidate_id": {
+      "type": "string"
+    },
+    "company_name": {
+      "type": "string",
+      "description": "Client company name"
+    },
+    "position_title": {
+      "type": "string"
+    },
+    "interviewer": {
+      "type": "string"
+    },
+    "interview_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "interview_time": {
+      "type": "string"
+    },
+    "interview_type": {
+      "type": "string",
+      "enum": [
+        "Online",
+        "Offline"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Scheduled",
+        "Completed",
+        "Cancelled",
+        "Rescheduled",
+        "Selected",
+        "Rejected",
+        "On Hold"
+      ],
+      "default": "Scheduled"
+    },
+    "feedback": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "rating": {
+      "type": "number"
+    },
+    "location": {
+      "type": "string",
+      "description": "Meeting link or physical location"
+    },
+    "created_by": {
+      "type": "string",
+      "description": "Recruiter who scheduled the interview"
+    },
+    "reminder_minutes": {
+      "type": "number",
+      "description": "Reminder time in minutes before interview"
+    }
+  },
+  "required": [
+    "candidate_name",
+    "candidate_id",
+    "interview_date",
+    "status"
+  ]
+}

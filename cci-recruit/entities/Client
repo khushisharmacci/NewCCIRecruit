@@ -1,0 +1,55 @@
+{
+  "name": "Client",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "name": {
+      "type": "string"
+    },
+    "industry": {
+      "type": "string"
+    },
+    "contact_person": {
+      "type": "string"
+    },
+    "contact_email": {
+      "type": "string",
+      "format": "email"
+    },
+    "contact_phone": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Active",
+        "Inactive",
+        "Prospect"
+      ],
+      "default": "Active"
+    },
+    "requirements_count": {
+      "type": "number",
+      "default": 0
+    },
+    "agreement_url": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "logo_url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "status"
+  ]
+}

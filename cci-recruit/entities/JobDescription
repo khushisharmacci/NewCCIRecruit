@@ -1,0 +1,38 @@
+{
+  "name": "JobDescription",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "title": {
+      "type": "string"
+    },
+    "client_name": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string",
+      "description": "Full JD text content"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "URL to uploaded JD file (PDF/DOCX/TXT)"
+    },
+    "file_name": {
+      "type": "string"
+    },
+    "source_type": {
+      "type": "string",
+      "enum": [
+        "upload",
+        "manual"
+      ],
+      "default": "manual"
+    }
+  },
+  "required": [
+    "title"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "name": "LeaveRequest",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "employee_name": {
+      "type": "string"
+    },
+    "employee_id": {
+      "type": "string"
+    },
+    "leave_type": {
+      "type": "string",
+      "enum": [
+        "Casual Leave",
+        "Sick Leave"
+      ]
+    },
+    "from_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "to_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Pending",
+        "Approved",
+        "Rejected"
+      ],
+      "default": "Pending"
+    },
+    "reviewed_by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "employee_name",
+    "leave_type",
+    "from_date",
+    "to_date"
+  ]
+}
