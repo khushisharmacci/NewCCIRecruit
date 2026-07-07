@@ -346,9 +346,9 @@ export default function Register() {
       const logoUrl = await uploadDocument("logo", "Company Logo");
       const profilePdfUrl = await uploadDocument("profile_pdf", "Company Profile PDF");
 
-      // Create company profile
+      // Create company profile in company_profile table
       const { data: companyData, error: companyError } = await supabase
-        .from("companies")
+        .from("company_profile")
         .insert({
           company_name: company.name,
           logo_url: logoUrl,
@@ -366,7 +366,7 @@ export default function Register() {
 
       if (companyError) throw companyError;
 
-      // Create CEO profile
+      // Create CEO profile in recruiters table
       const { error: recruiterError } = await supabase
         .from("recruiters")
         .insert({
