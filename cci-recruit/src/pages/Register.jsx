@@ -346,7 +346,7 @@ export default function Register() {
       const logoUrl = await uploadDocument("logo", "Company Logo");
       const profilePdfUrl = await uploadDocument("profile_pdf", "Company Profile PDF");
 
-      // Create company profile in company_profile table
+      // Create company profile in company_profile table without owner_user_id
       const { data: companyData, error: companyError } = await supabase
         .from("company_profile")
         .insert({
@@ -359,7 +359,6 @@ export default function Register() {
           office_address: company.address,
           contact_email: authUser.email,
           contact_phone: company.phone,
-          owner_user_id: authUser.id,
         })
         .select()
         .single();
