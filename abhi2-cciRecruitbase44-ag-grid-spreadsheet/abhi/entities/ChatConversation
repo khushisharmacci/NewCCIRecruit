@@ -1,0 +1,54 @@
+{
+  "name": "ChatConversation",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "direct",
+        "group"
+      ],
+      "default": "direct"
+    },
+    "name": {
+      "type": "string",
+      "description": "Group name (for group chats)"
+    },
+    "description": {
+      "type": "string"
+    },
+    "members": {
+      "type": "string",
+      "description": "JSON array of user IDs"
+    },
+    "member_names": {
+      "type": "string",
+      "description": "JSON array of member display names"
+    },
+    "admin_id": {
+      "type": "string",
+      "description": "Group admin user ID"
+    },
+    "admin_name": {
+      "type": "string"
+    },
+    "last_message": {
+      "type": "string"
+    },
+    "last_message_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "last_message_by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "type",
+    "members"
+  ]
+}

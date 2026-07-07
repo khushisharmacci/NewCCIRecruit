@@ -1,0 +1,71 @@
+{
+  "name": "Position",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "title": {
+      "type": "string"
+    },
+    "client_name": {
+      "type": "string"
+    },
+    "client_id": {
+      "type": "string",
+      "description": "Reference to Client entity"
+    },
+    "parent_id": {
+      "type": "string",
+      "description": "Parent position ID for tree hierarchy (empty = root)"
+    },
+    "department": {
+      "type": "string"
+    },
+    "experience_min": {
+      "type": "number"
+    },
+    "experience_max": {
+      "type": "number"
+    },
+    "skills_required": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "salary_min": {
+      "type": "number"
+    },
+    "salary_max": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Open",
+        "In Progress",
+        "On Hold",
+        "Closed",
+        "Cancelled",
+        "Archived"
+      ],
+      "default": "Open"
+    },
+    "description": {
+      "type": "string"
+    },
+    "openings": {
+      "type": "number",
+      "default": 1
+    },
+    "assigned_recruiter": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "status"
+  ]
+}

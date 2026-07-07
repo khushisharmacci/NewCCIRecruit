@@ -1,0 +1,57 @@
+{
+  "name": "Lead",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "company_name": {
+      "type": "string"
+    },
+    "contact_person": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "New Lead",
+        "Contacted",
+        "Qualified",
+        "Proposal Sent",
+        "Negotiation",
+        "Won",
+        "Lost"
+      ],
+      "default": "New Lead"
+    },
+    "source": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "next_followup": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "value": {
+      "type": "number"
+    },
+    "assigned_to": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "company_name",
+    "contact_person",
+    "stage"
+  ]
+}

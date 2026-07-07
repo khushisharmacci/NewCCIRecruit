@@ -1,0 +1,60 @@
+{
+  "name": "DataFile",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant company ID for data isolation"
+    },
+    "name": {
+      "type": "string"
+    },
+    "original_filename": {
+      "type": "string"
+    },
+    "folder_id": {
+      "type": "string"
+    },
+    "folder_name": {
+      "type": "string"
+    },
+    "entity_type": {
+      "type": "string"
+    },
+    "file_url": {
+      "type": "string"
+    },
+    "row_count": {
+      "type": "number"
+    },
+    "column_count": {
+      "type": "number"
+    },
+    "columns": {
+      "type": "string"
+    },
+    "rows_data": {
+      "type": "string"
+    },
+    "sync_status": {
+      "type": "string",
+      "enum": [
+        "synced",
+        "pending",
+        "error"
+      ],
+      "default": "synced"
+    },
+    "imported_count": {
+      "type": "number",
+      "default": 0
+    },
+    "size_bytes": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "name",
+    "original_filename"
+  ]
+}
