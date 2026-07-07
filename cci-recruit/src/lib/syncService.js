@@ -218,8 +218,8 @@ export function syncCandidateToRow(candidate, dataFile) {
 /**
  * Save rows back to a DataFile entity.
  */
-export async function saveSpreadsheetRows(dataFileId, rows) {
-  return await base44.entities.DataFile.update(dataFileId, {
+export async function saveSpreadsheetRows(dataFileID, rows) {
+  return await base44.entities.DataFile.update(dataFile.id, {
     rows_data: JSON.stringify(rows),
     row_count: rows.filter((r) => !r._row_id || !r._row_id.startsWith("__deleted")).length,
   });

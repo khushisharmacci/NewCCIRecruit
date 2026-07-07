@@ -408,10 +408,11 @@ if (field === "sent_on" && value) {
       JSON.stringify(customData, null, 2);
 }
 
-          record.company_id = companyId;
-                    if (entity === "Candidate") {
-            record.data_file_id = dataFileId;
-            record.spreadsheet_id = dataFileId;
+           record.company_id = companyId;
+
+           if (entity === "Candidate") {
+           record.data_file_id = dataFile.id;
+           record.spreadsheet_id = dataFile.id;
           }
 
           try {
@@ -432,25 +433,34 @@ if (error) {
 
             success++;
             if (entity === "Candidate") {
-  spreadsheetRows.push({
-    __id: crypto.randomUUID(),
+              spreadsheetRows.push({
+             __id: crypto.randomUUID(),
 
-    ...row,
+             ...row,
 
-    _candidate_id: inserted.id,
-    spreadsheet_id: dataFileId,
-  });
+             _candidate_id: inserted.id,
+              spreadsheet_id: dataFile.id,
+});
+  
 }
           } catch (err) {
   console.error("=================================");
   console.error("IMPORT FAILED");
   console.error("Row Number:", i + batch.indexOf(row) + 2);
-  console.table(record);
-  console.table(row);
-  console.error(err);
-  console.error("=================================");
+
+  console.log("TABLE:", tableName);
+  console.log("RECORD:", record);
+  console.log("ROW:", row);
+
+  console.error("MESSAGE:", err.message);
+  console.error("DETAILS:", err.details);
+  console.error("HINT:", err.hint);
+  console.error("CODE:", err.code);
 
   failed++;
+
+  // TEMPORARY: stop on first error so we can see it
+  throw err;
 }
         })
       );
@@ -464,7 +474,7 @@ if (error) {
 
         rows_data: spreadsheetRows,
     })
-    .eq("id", dataFileId);
+    .eq("id", dataFile.id);
 
     if (updateError) {
       console.error(updateError);

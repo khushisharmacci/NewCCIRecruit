@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import {
   Phone,
   Plus,
@@ -41,12 +42,62 @@ export default function CallLogs({
   company_name: "",
   position_title: "",
   candidate_id: "",
+
+  spreadsheet_id: "",
+  spreadsheet_fields: {},
 };
 
   const [editing, setEditing] = useState(-1);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [spreadsheetColumns, setSpreadsheetColumns] = useState([]);
+  const [spreadsheetFiles, setSpreadsheetFiles] = useState([]);
+  const [spreadsheetId, setSpreadsheetId] = useState("");
+  const [spreadsheetValues, setSpreadsheetValues] = useState({});
+
+  useEffect(() => {
+  loadSpreadsheets();
+}, []);
+
+async function loadSpreadsheets() {
+  const { data, error } = await supabase
+    .from("data_files")
+    .select("id,name,columns");
+
+  if (!error) {
+    setSpreadsheetFiles(data || []);
+  }
+}
+
+async function handleSpreadsheetSelect(fileId) {
+  setForm((prev) => ({
+    ...prev,
+    spreadsheet_id: fileId,
+    spreadsheet_fields: {},
+  }));
+
+  const selected = spreadsheetFiles.find(
+    (f) => f.id === fileId
+  );
+
+  if (!selected) {
+    setSpreadsheetColumns([]);
+    return;
+  }
+
+  setSpreadsheetColumns(selected.columns || []);
+}
+
+function updateSpreadsheetField(header, value) {
+  setForm((prev) => ({
+    ...prev,
+    spreadsheet_fields: {
+      ...prev.spreadsheet_fields,
+      [header]: value,
+    },
+  }));
+}
 
   const startAdd = () => {
     setForm(emptyForm);
@@ -284,6 +335,88 @@ if (Object.keys(errs).length) return;
   )}
 </div>
           </div>
+{!form.candidate_id && (
+  <div>
+    <Label className="mb-1 block text-xs">
+      Select Spreadsheet
+    </Label>
+
+    <Select
+      value={form.spreadsheet_id}
+      onValueChange={handleSpreadsheetSelect}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Choose spreadsheet" />
+      </SelectTrigger>
+
+      <SelectContent>
+        {spreadsheetFiles.map((file) => (
+          <SelectItem
+            key={file.id}
+            value={file.id}
+          >
+            {file.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+)}
+
+{!form.candidate_id &&
+  form.spreadsheet_id &&
+  spreadsheetColumns.length > 0 && (
+    <div className="space-y-3 rounded-lg border border-border p-3">
+      <Label className="text-sm font-semibold">
+        Spreadsheet Details
+      </Label>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {spreadsheetColumns
+          .filter(
+  (header) =>
+    ![
+      "_candidate_id",
+      "_row_id",
+      "id",
+      "Name",
+      "Candidate Name",
+      "Full Name",
+      "Phone",
+      "Phone Number",
+      "Mobile",
+      "Company",
+      "Current Company",
+      "Position",
+      "Position Title",
+      "Discussion Notes",
+      "Remarks",
+    ]
+      .map((x) => x.toLowerCase())
+      .includes(String(header).toLowerCase())
+)
+          .map((header) => (
+            <div key={header}>
+              <Label className="mb-1 block text-xs">
+                {header}
+              </Label>
+
+              <Input
+                value={
+                  form.spreadsheet_fields?.[header] || ""
+                }
+                onChange={(e) =>
+                  updateSpreadsheetField(
+                    header,
+                    e.target.value
+                  )
+                }
+              />
+            </div>
+          ))}
+      </div>
+    </div>
+)}
 
           <Textarea
   className="min-h-[80px]"
