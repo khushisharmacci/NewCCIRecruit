@@ -13,6 +13,7 @@ import {
   Tooltip, ResponsiveContainer, Legend } from
 "recharts";
 import { cn } from "@/lib/utils";
+import RegularizationRequests from "@/components/attendance/RegularizationRequests"; // <-- Add this import
 
 function todayStr() {return format(new Date(), "yyyy-MM-dd");}
 function nowStr() {
@@ -453,6 +454,7 @@ const displayRecords = showAllRecords
         }
       </div>
       <LeaveRequests />
+       <RegularizationRequests />
             <EmployeeDirectory />
     </div>);
 

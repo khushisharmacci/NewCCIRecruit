@@ -7,36 +7,18 @@ import { Label } from "@/components/ui/label";
 import { Mail, Lock, Loader2, Building2, Shield, Eye, EyeOff, ChevronDown } from "lucide-react";
 import GoogleIcon from "@/components/GoogleIcon";
 
-const ROLE_REDIRECTS = {
-  ceo: "/",
-admin: "/",
-team_lead: "/",
-recruiter: "/",
-employee: "/",
-viewer: "/",
-};
-
-const ROLE_WELCOME = {
-  ceo: "Executive Dashboard",
-admin: "Operations Dashboard",
-team_lead: "Team Lead Dashboard",
-recruiter: "Recruitment Dashboard",
-employee: "Employee Dashboard",
-viewer: "Viewer Dashboard",
-};
-
 function LogoHeader() {
   return (
     <div className="flex flex-col items-center mb-8">
-  <img
-  src="/ccilogo.jpeg"
-  alt="CCI Logo"
-        className="h-16 w-16 object-contain rounded-2xl mb-3 shadow-md" />
-      
+      <img
+        src="/ccilogo.jpeg"
+        alt="CCI Logo"
+        className="h-16 w-16 object-contain rounded-2xl mb-3 shadow-md"
+      />
       <h1 className="text-2xl font-bold text-foreground">cciRecruit</h1>
       <p className="text-muted-foreground text-sm mt-0.5">Career Connect India — Recruitment Platform</p>
-    </div>);
-
+    </div>
+  );
 }
 
 export default function Login() {
@@ -61,47 +43,55 @@ export default function Login() {
     }
   };
 
-  const logActivity = async () => {};
-
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError("");
-  setLoading(true);
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-  try {
-  const { data, error } =
-    await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-  console.log("LOGIN DATA", data);
-  console.log("LOGIN ERROR", error);
+      if (loginError) throw loginError;
 
-  if (error) throw error;
+      // Check if profile exists in public.recruiters
+      const { data: recruiter, error: lookupError } = await supabase
+        .from("recruiters")
+        .select("id")
+        .eq("auth_user_id", data.user.id)
+        .maybeSingle();
 
-  window.location.href = "/dashboard";
-} catch (err) {
-  console.error(err);
-  setError(JSON.stringify(err));
-}
+      if (lookupError) throw lookupError;
 
-  setLoading(false);
-};
+      if (!recruiter) {
+        // Logged in but profile was not set up. Redirect to company onboarding.
+        window.location.href = `/register?step=company_type&email=${encodeURIComponent(email)}`;
+      } else {
+        window.location.href = "/dashboard";
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to log in.");
+    }
+
+    setLoading(false);
+  };
 
   const handleGoogle = async () => {
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${window.location.origin}/dashboard`
-    },
-  });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`
+      },
+    });
 
-  if (error) {
-    console.error(error);
-    setError(error.message);
-  }
-};
+    if (error) {
+      console.error(error);
+      setError(error.message);
+    }
+  };
 
   if (mode === "platform") {
     return (
@@ -120,9 +110,9 @@ export default function Login() {
               <p className="text-xs text-purple-300">Restricted access — CCI administrators only</p>
             </div>
 
-            {error &&
-            <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-700/40 text-red-300 text-sm">{error}</div>
-            }
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-700/40 text-red-300 text-sm">{error}</div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
@@ -153,8 +143,8 @@ export default function Login() {
             </button>
           </p>
         </div>
-      </div>);
-
+      </div>
+    );
   }
 
   // Company Login
@@ -165,11 +155,11 @@ export default function Login() {
         <div>
           <div className="flex items-center gap-3 mb-12">
             <img
-  src="/ccilogo.jpeg"
-  alt="CCI Logo"
+              src="/ccilogo.jpeg"
+              alt="CCI Logo"
               className="h-10 w-10 rounded-xl object-contain cursor-pointer"
-              onClick={handleLogoClick} />
-            
+              onClick={handleLogoClick}
+            />
             <span className="text-white font-bold text-lg">cciRecruit</span>
           </div>
           <h2 className="text-white text-3xl font-bold leading-tight">
@@ -179,12 +169,12 @@ export default function Login() {
             The all-in-one recruitment platform built for modern teams. Manage candidates, track pipelines, and close hires faster with AI-powered tools.
           </p>
           <div className="mt-10 space-y-3">
-            {["CEO & Executive Dashboard", "AI-Powered Resume Analysis", "Attendance & HR Management", "Real-time Recruitment Pipeline"].map((f) =>
-            <div key={f} className="flex items-center gap-3">
+            {["CEO & Executive Dashboard", "AI-Powered Resume Analysis", "Attendance & HR Management", "Real-time Recruitment Pipeline"].map((f) => (
+              <div key={f} className="flex items-center gap-3">
                 <div className="h-1.5 w-1.5 rounded-full bg-sky-400 shrink-0" />
                 <span className="text-slate-300 text-sm">{f}</span>
               </div>
-            )}
+            ))}
           </div>
         </div>
         <div className="border-t border-slate-700/50 pt-6">
@@ -216,9 +206,9 @@ export default function Login() {
             </div>
           </div>
 
-          {error &&
-          <div className="mb-4 p-3 rounded-lg bg-destructive/15 text-destructive-foreground border border-destructive/30 text-sm">{error}</div>
-          }
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-destructive/15 text-destructive-foreground border border-destructive/30 text-sm">{error}</div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -255,13 +245,13 @@ export default function Login() {
           <div className="mt-8 pt-6 border-t border-border">
             <p className="text-xs text-muted-foreground text-center mb-3">All roles supported</p>
             <div className="flex flex-wrap gap-2 justify-center">
-              {["CEO", "Super Admin", "Admin", "Team Lead", "Recruiter", "Employee"].map((r) =>
-              <span key={r} className="px-2.5 py-1 text-xs rounded-full bg-secondary text-secondary-foreground border border-border">{r}</span>
-              )}
+              {["CEO", "Super Admin", "Admin", "Team Lead", "Recruiter", "Employee"].map((r) => (
+                <span key={r} className="px-2.5 py-1 text-xs rounded-full bg-secondary text-secondary-foreground border border-border">{r}</span>
+              ))}
             </div>
           </div>
         </div>
       </div>
-    </div>);
-
+    </div>
+  );
 }
