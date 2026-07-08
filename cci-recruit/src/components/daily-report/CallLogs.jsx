@@ -171,11 +171,16 @@ const filteredPositions = selectedCompany
       const savedCandidateId = form.candidate_id || (syncedCandidate ? syncedCandidate.id : null);
 
       // 2. Build the local Call Log object to save on daily report state
+            // Find the selected company object to extract its name
+      const selectedCompanyObj = companies.find(c => c.id === form.company_id);
+
+      // 2. Build the local Call Log object to save on daily report state
       const savedLog = {
         person_name: form.person_name,
         phone_number: form.phone_number,
         discussion_notes: form.discussion_notes,
         company_id: form.company_id || null,
+        company_name: selectedCompanyObj ? selectedCompanyObj.name : null,
         position_title: form.position_title || null,
         candidate_id: savedCandidateId,
         spreadsheet_id: selectedSpreadsheetId || null,
@@ -454,13 +459,25 @@ const filteredPositions = selectedCompany
                 <Phone className="h-4 w-4 text-primary" />
               </div>
 
-              <div className="min-w-0 flex-1">
+                            <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-medium">{log.person_name}</p>
 
                   {log.phone_number && (
                     <span className="text-xs text-muted-foreground">
                       {log.phone_number}
+                    </span>
+                  )}
+
+                  {log.company_name && (
+                    <span className="text-[10px] bg-slate-500/15 text-slate-300 border border-slate-500/20 px-1.5 py-0.2 rounded font-medium">
+                      {log.company_name}
+                    </span>
+                  )}
+
+                  {log.position_title && (
+                    <span className="text-[10px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 px-1.5 py-0.2 rounded font-medium">
+                      {log.position_title}
                     </span>
                   )}
                 </div>

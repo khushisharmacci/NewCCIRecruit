@@ -79,6 +79,7 @@ export default function Candidates() {
         : file.rows_data || [];
 
     const aliases = {
+      row_order: ["SR.NO.", "SR NO", "SR. NO", "S.NO.", "S. NO", "S NO", "Serial Number"],
       full_name: ["Name", "Candidate Name", "Full Name"],
       email: ["Email", "Email ID", "Email Address"],
       phone: ["Phone", "Contact Number", "Mobile", "Mobile Number"],
@@ -128,6 +129,7 @@ export default function Candidates() {
 
     const row = {};
     const values = {
+      row_order: candidate.row_order,
       full_name: candidate.full_name,
       email: candidate.email,
       phone: candidate.phone,

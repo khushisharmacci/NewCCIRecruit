@@ -268,6 +268,7 @@ export default function useSpreadsheet(fileId) {
       const columns = file.columns || [];
 
       const aliases = {
+        row_order: ["SR.NO.", "SR NO", "SR. NO", "S.NO.", "S. NO", "S NO", "Serial Number"],
         full_name: ["Name", "Candidate Name", "Full Name"],
         email: ["Email", "Email ID", "Email Address"],
         phone: ["Phone", "Contact Number", "Mobile", "Mobile Number"],

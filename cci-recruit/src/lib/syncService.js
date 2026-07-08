@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 // ─── Field Mapping ─────────────────────────────────────────────────────────
 // Maps candidate entity fields to common spreadsheet column header aliases.
 const FIELD_ALIASES = {
+  row_order: ["sr.no.", "sr no", "sr. no", "s.no.", "s. no", "s no", "serial number"],
   full_name: ["candidate name", "name", "full name", "candidate", "candidate full name"],
   email: ["email", "email id", "mail", "email address"],
   phone: ["contact number", "phone", "phone number", "mobile", "contact", "mobile number", "contact no"],
