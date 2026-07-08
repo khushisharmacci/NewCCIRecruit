@@ -61,27 +61,26 @@ export default function SpreadsheetViewer({
 const [activeSheet, setActiveSheet] = useState(0);
 
 
-    const columnDefs = (spreadsheet.columns ?? []).map((column) => {
-    if (column === "SR.NO.") {
+        const columnDefs = (spreadsheet.columns ?? []).map((column) => {
+        const isSrNo = column.toLowerCase() === "sr no" || column.toLowerCase() === "sr. no";
         return {
             field: column,
             headerName: column,
-            editable: false,
-            width: 90,
-            valueGetter: (params) => params.node.rowIndex + 1,
+            editable: true,
+            sortable: true,
+            filter: isSrNo ? "agNumberColumnFilter" : true,
+            floatingFilter: true,
+            resizable: true,
+            comparator: isSrNo ? (valueA, valueB) => {
+                const numA = parseInt(String(valueA ?? "").replace(/[^0-9]/g, ""), 10);
+                const numB = parseInt(String(valueB ?? "").replace(/[^0-9]/g, ""), 10);
+                if (isNaN(numA) && isNaN(numB)) return 0;
+                if (isNaN(numA)) return 1;
+                if (isNaN(numB)) return -1;
+                return numA - numB;
+            } : undefined
         };
-    }
-
-    return {
-        field: column,
-        headerName: column,
-        editable: true,
-        sortable: true,
-        filter: true,
-        floatingFilter: true,
-        resizable: true,
-    };
-});
+    });
 
     if (spreadsheet.error) {
         return (

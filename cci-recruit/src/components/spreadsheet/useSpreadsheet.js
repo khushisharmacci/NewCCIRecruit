@@ -36,16 +36,34 @@ export default function useSpreadsheet(fileId) {
         },
     });
 
-    useEffect(() => {
+        useEffect(() => {
         if (!data) return;
 
         setColumns(data.columns ?? []);
-        setRows(
-    (data.rows_data ?? []).map((row) => ({
-        __id: row.__id ?? crypto.randomUUID(),
-        ...row,
-    }))
-);
+        
+        let loadedRows = (data.rows_data ?? []).map((row) => ({
+            __id: row.__id ?? crypto.randomUUID(),
+            ...row,
+        }));
+
+        // Sort by 'SR NO' or 'SR. NO' numerically if the column exists
+        const srNoCol = (data.columns ?? []).find(
+            (col) => col.toLowerCase() === "sr no" || col.toLowerCase() === "sr. no"
+        );
+
+        if (srNoCol) {
+            loadedRows.sort((a, b) => {
+                const valA = parseInt(String(a[srNoCol] ?? "").replace(/[^0-9]/g, ""), 10);
+                const valB = parseInt(String(b[srNoCol] ?? "").replace(/[^0-9]/g, ""), 10);
+                
+                const numA = isNaN(valA) ? 999999 : valA;
+                const numB = isNaN(valB) ? 999999 : valB;
+                
+                return numA - numB;
+            });
+        }
+
+        setRows(loadedRows);
     }, [data]);
 
     const filteredRows = useMemo(() => {

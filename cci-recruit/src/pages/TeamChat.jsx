@@ -94,6 +94,53 @@ export default function TeamChat() {
     if (latest) setSelectedConv(latest);
   }, [myConversations, selectedConv]);
 
+    // ---------------- MARK AS READ ----------------
+  useEffect(() => {
+    if (!selectedConv || !user || !messages.length) return;
+
+    // Find all messages in this conversation not sent by us and not yet read by us
+    const unreadMessages = messages.filter((m) => {
+      if (m.conversation_id !== selectedConv.id) return false;
+      if (m.sender_id === user.id) return false;
+
+      try {
+        const readByArray = typeof m.read_by === "string" 
+          ? JSON.parse(m.read_by || "[]") 
+          : (m.read_by || []);
+        return !readByArray.includes(user.id);
+      } catch {
+        return true;
+      }
+    });
+
+    if (unreadMessages.length === 0) return;
+
+    const markMessagesRead = async () => {
+      for (const m of unreadMessages) {
+        try {
+          const currentReadBy = typeof m.read_by === "string" 
+            ? JSON.parse(m.read_by || "[]") 
+            : (m.read_by || []);
+          
+          const updatedReadBy = [...new Set([...currentReadBy, user.id])];
+          
+          await supabase
+            .from("chat_messages")
+            .update({ read_by: updatedReadBy })
+            .eq("id", m.id);
+        } catch (err) {
+          console.error("Failed to mark message as read:", err);
+        }
+      }
+
+      // Refresh cache so UI badges update instantly
+      queryClient.invalidateQueries({ queryKey: ["chat-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["chat-messages-header"] });
+    };
+
+    markMessagesRead();
+  }, [selectedConv, messages, user, queryClient]);
+
   // ---------------- UNREAD COUNTS ----------------
 
   const unreadCounts = {};
