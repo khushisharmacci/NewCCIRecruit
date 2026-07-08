@@ -406,33 +406,93 @@ if (!tableName) {
                 JSON.stringify(customData, null, 2);
           }
 
-          record.company_id = companyId;
+                              record.company_id = companyId;
 
           if (entity === "Candidate") {
             record.data_file_id = dataFile.id;
             record.spreadsheet_id = dataFile.id;
           }
 
+          // 1. Check if the row has a valid primary identifier (e.g. candidate name)
+          const primaryIdField = entityDef.required[0];
+          const hasPrimaryId = record[primaryIdField] && String(record[primaryIdField]).trim() !== "";
+
           let insertedId = null;
-          try {
-            const { data: inserted, error } = await supabase
-              .from(tableName)
-              .insert([record])
-              .select()
-              .single();
+          
+          // Only attempt database insert/update if the row has a name
+          if (hasPrimaryId) {
+            // 2. Fallback for missing emails (prevents database NOT NULL failures)
+            if (entity === "Candidate" && !record.email) {
+              record.email = `noemail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@placeholder.local`;
+            }
 
-            if (error) throw error;
-            insertedId = inserted.id;
-            success++;
-          } catch (err) {
-            console.error("=================================");
-            console.error("IMPORT FAILED");
-            console.error("Row Number:", i + batch.indexOf(row) + 2);
-            console.error("MESSAGE:", err.message);
-            console.error("DETAILS:", err.details);
-            console.error("CODE:", err.code);
+            // 3. Check if candidate already exists in database by Email or Phone
+            let existingCandidateId = null;
+            if (entity === "Candidate") {
+              if (record.email && !record.email.includes("placeholder.local")) {
+                const { data: existing } = await supabase
+                  .from("candidates")
+                  .select("id")
+                  .eq("email", record.email)
+                  .maybeSingle();
+                if (existing) existingCandidateId = existing.id;
+              }
+              if (!existingCandidateId && record.phone) {
+                const { data: existing } = await supabase
+                  .from("candidates")
+                  .select("id")
+                  .eq("phone", record.phone)
+                  .maybeSingle();
+                if (existing) existingCandidateId = existing.id;
+              }
+            }
 
-            failed++;
+            try {
+              let error = null;
+              let inserted = null;
+
+              if (existingCandidateId) {
+                // Candidate exists: Update their information instead of duplicate inserting
+                const { data: updated, error: updateErr } = await supabase
+                  .from(tableName)
+                  .update(record)
+                  .eq("id", existingCandidateId)
+                  .select()
+                  .single();
+                error = updateErr;
+                inserted = updated;
+              } else {
+                // Candidate doesn't exist: Perform standard insert
+                const { data: newInserted, error: insertErr } = await supabase
+                  .from(tableName)
+                  .insert([record])
+                  .select()
+                  .single();
+                error = insertErr;
+                inserted = newInserted;
+              }
+
+              if (error) throw error;
+              insertedId = inserted.id;
+              success++;
+            } catch (err) {
+              console.error("=================================");
+              console.error("IMPORT FAILED");
+              console.error("Row Number:", i + batch.indexOf(row) + 2);
+              console.error("MESSAGE:", err.message);
+              console.error("DETAILS:", err.details);
+              console.error("CODE:", err.code);
+
+              failed++;
+            }
+          }
+
+          if (entity === "Candidate") {
+            spreadsheetRows.push({
+              __id: crypto.randomUUID(),
+              ...row,
+              ...(insertedId ? { _candidate_id: insertedId, spreadsheet_id: dataFile.id } : {})
+            });
           }
 
           if (entity === "Candidate") {
