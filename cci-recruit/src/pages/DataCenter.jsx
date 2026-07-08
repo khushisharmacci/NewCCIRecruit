@@ -133,7 +133,7 @@ const handleDownload = (file) => {
   console.log("Download:", file);
 };
 
-  const handleDeleteFile = async (file) => {
+    const handleDeleteFile = async (file) => {
   const confirmed = window.confirm(
     `Delete "${file.name}"?\n\nThis will also delete all candidates imported from this file. This action cannot be undone.`
   );
@@ -143,13 +143,35 @@ const handleDownload = (file) => {
   setDeletingId(file.id);
 
   try {
-    // 1. Delete imported candidates
-    const { error: candidateError } = await supabase
+    // 1. Fetch candidates linked to this file
+    const { data: linkedCandidates } = await supabase
       .from("candidates")
-      .delete()
+      .select("id")
       .eq("data_file_id", file.id);
 
-    if (candidateError) throw candidateError;
+    if (linkedCandidates && linkedCandidates.length > 0) {
+      const candidateIds = linkedCandidates.map((c) => c.id);
+
+      // Delete client submissions first to prevent foreign key errors
+      await supabase
+        .from("client_submissions")
+        .delete()
+        .in("candidate_id", candidateIds);
+
+      // Delete interviews first to prevent foreign key errors
+      await supabase
+        .from("interviews")
+        .delete()
+        .in("candidate_id", candidateIds);
+
+      // Delete candidates
+      const { error: candidateError } = await supabase
+        .from("candidates")
+        .delete()
+        .in("id", candidateIds);
+
+      if (candidateError) throw candidateError;
+    }
 
     // 2. Delete the uploaded file record
     const { error: fileError } = await supabase
@@ -178,7 +200,7 @@ const handleDownload = (file) => {
     toast.success("File and imported candidates deleted successfully.");
   } catch (err) {
     console.error(err);
-    toast.error(err.message);
+    alert(err.message);
   } finally {
     setDeletingId(null);
   }

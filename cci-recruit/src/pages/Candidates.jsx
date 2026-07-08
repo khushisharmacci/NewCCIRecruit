@@ -304,22 +304,19 @@ export default function Candidates() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (candidate) => {
-      if (candidate.data_file_id) {
+    const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      const candidate = candidates.find(c => c.id === id);
+      if (candidate?.data_file_id) {
+        // Fetch spreadsheet data to update rows_data
         const { data: file } = await supabase
           .from("data_files")
           .select("rows_data")
           .eq("id", candidate.data_file_id)
           .single();
 
-        if (file) {
-          const rows =
-            typeof file.rows_data === "string"
-              ? JSON.parse(file.rows_data)
-              : file.rows_data || [];
-
-          const updatedRows = rows.filter(
+        if (file?.rows_data) {
+          const updatedRows = file.rows_data.filter(
             (r) => r._candidate_id !== candidate.id
           );
 
@@ -332,10 +329,21 @@ export default function Candidates() {
         }
       }
 
+      // Delete linked records first to prevent foreign key errors
+      await supabase
+        .from("client_submissions")
+        .delete()
+        .eq("candidate_id", id);
+
+      await supabase
+        .from("interviews")
+        .delete()
+        .eq("candidate_id", id);
+
       const { error } = await supabase
         .from("candidates")
         .delete()
-        .eq("id", candidate.id);
+        .eq("id", id);
 
       if (error) throw error;
     },
@@ -366,12 +374,48 @@ useEffect(() => {
   return matchSearch && matchStatus && matchFile;
 });
 
-  const handleDeleteSelected = async () => {
+    const handleDeleteSelected = async () => {
   if (
     !window.confirm(
       `Delete ${selectedCandidates.length} candidate(s)?`
     )
   ) return;
+
+  // Filter spreadsheet rows for all selected candidates
+  for (const candidateId of selectedCandidates) {
+    const candidate = candidates.find(c => c.id === candidateId);
+    if (candidate?.data_file_id) {
+      const { data: file } = await supabase
+        .from("data_files")
+        .select("rows_data")
+        .eq("id", candidate.data_file_id)
+        .single();
+
+      if (file?.rows_data) {
+        const updatedRows = file.rows_data.filter(
+          (r) => r._candidate_id !== candidateId
+        );
+
+        await supabase
+          .from("data_files")
+          .update({
+            rows_data: updatedRows,
+          })
+          .eq("id", candidate.data_file_id);
+      }
+    }
+  }
+
+  // Delete linked records first to prevent foreign key errors
+  await supabase
+    .from("client_submissions")
+    .delete()
+    .in("candidate_id", selectedCandidates);
+
+  await supabase
+    .from("interviews")
+    .delete()
+    .in("candidate_id", selectedCandidates);
 
   const { error } = await supabase
     .from("candidates")
@@ -387,6 +431,9 @@ useEffect(() => {
 
   queryClient.invalidateQueries({
     queryKey: ["candidates"],
+  });
+  queryClient.invalidateQueries({
+    queryKey: ["spreadsheet"],
   });
 };
 

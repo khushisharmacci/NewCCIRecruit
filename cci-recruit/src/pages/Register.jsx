@@ -287,7 +287,7 @@ export default function Register() {
       if (isCeo) {
         setStep("company");
       } else {
-        // Create Recruiter profile directly and route to pending approval
+        // Create Recruiter profile directly without status columns
         const { error: profileError } = await supabase
           .from("recruiters")
           .insert({
@@ -296,7 +296,6 @@ export default function Register() {
             email: authUser.email,
             full_name: authUser.email.split("@")[0],
             role: "recruiter",
-            status: "pending_approval",
           });
 
         if (profileError) throw profileError;
@@ -365,7 +364,7 @@ export default function Register() {
 
       if (companyError) throw companyError;
 
-      // Create CEO profile in recruiters table
+      // Create CEO profile in recruiters table without status columns
       const { error: recruiterError } = await supabase
         .from("recruiters")
         .insert({
@@ -374,7 +373,6 @@ export default function Register() {
           email: authUser.email,
           full_name: authUser.email.split("@")[0],
           role: "ceo",
-          status: "active",
         });
 
       if (recruiterError) throw recruiterError;

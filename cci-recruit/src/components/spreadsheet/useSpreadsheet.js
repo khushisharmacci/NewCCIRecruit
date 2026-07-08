@@ -74,7 +74,7 @@ export default function useSpreadsheet(fileId) {
         if (error) console.error(error);
     }
 
-    async function updateCell(rowId, columnName, value) {
+        async function updateCell(rowId, columnName, value) {
     const updated = rows.map((row) =>
         row.__id === rowId
             ? {
@@ -89,28 +89,52 @@ export default function useSpreadsheet(fileId) {
     clearTimeout(window.sheetSave);
 
     window.sheetSave = setTimeout(async () => {
-        await saveSpreadsheet(updated);
-
-        // Find if this row is linked to a candidate
         const row = updated.find((r) => r.__id === rowId);
+        
+        // Find if this row is linked to a candidate
         if (row && row._candidate_id) {
             const field = mapHeaderToField(columnName);
             if (field) {
-                let cleanedValue = value;
-                if (field === "experience_years" || field === "expected_salary") {
-                    const cleaned = String(value).replace(/[^0-9.]/g, "");
-                    const num = parseFloat(cleaned);
-                    cleanedValue = isNaN(num) ? null : num;
+                // If they erase the name (or candidate name becomes empty)
+                if (field === "full_name" && (!value || String(value).trim() === "")) {
+                    // Delete linked records first to prevent foreign key errors
+                    await supabase
+                        .from("client_submissions")
+                        .delete()
+                        .eq("candidate_id", row._candidate_id);
+
+                    await supabase
+                        .from("interviews")
+                        .delete()
+                        .eq("candidate_id", row._candidate_id);
+
+                    // Delete candidate record
+                    await supabase
+                        .from("candidates")
+                        .delete()
+                        .eq("id", row._candidate_id);
+                    
+                    // Remove candidate link from the row
+                    row._candidate_id = null;
+                } else {
+                    let cleanedValue = value;
+                    if (field === "experience_years" || field === "expected_salary") {
+                        const cleaned = String(value).replace(/[^0-9.]/g, "");
+                        const num = parseFloat(cleaned);
+                        cleanedValue = isNaN(num) ? null : num;
+                    }
+
+                    const { error } = await supabase
+                        .from("candidates")
+                        .update({ [field]: cleanedValue })
+                        .eq("id", row._candidate_id);
+
+                    if (error) console.error("Error updating candidate:", error);
                 }
-
-                const { error } = await supabase
-                    .from("candidates")
-                    .update({ [field]: cleanedValue })
-                    .eq("id", row._candidate_id);
-
-                if (error) console.error("Error updating candidate:", error);
             }
         }
+
+        await saveSpreadsheet(updated);
 
         queryClient.invalidateQueries({
             queryKey: ["candidates"],
@@ -161,7 +185,7 @@ export default function useSpreadsheet(fileId) {
         }
     });
 
-  const deleteRows = useMutation({
+    const deleteRows = useMutation({
     mutationFn: async () => {
       if (!selectedRows.length) return;
 
@@ -169,6 +193,17 @@ export default function useSpreadsheet(fileId) {
       const candidateIds = rowsToDelete.map(r => r._candidate_id).filter(Boolean);
 
       if (candidateIds.length > 0) {
+        // Delete linked records first to prevent foreign key errors
+        await supabase
+          .from("client_submissions")
+          .delete()
+          .in("candidate_id", candidateIds);
+
+        await supabase
+          .from("interviews")
+          .delete()
+          .in("candidate_id", candidateIds);
+
         const { error } = await supabase
           .from("candidates")
           .delete()
