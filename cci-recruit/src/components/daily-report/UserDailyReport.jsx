@@ -38,13 +38,12 @@ export default function UserDailyReport() {
 });
 
 const { data: candidates = [] } = useQuery({
-  queryKey: ["candidates"],
-  enabled: !!companyId,
+  queryKey: ["daily-report-candidates"],
+  enabled: !!user,
   queryFn: async () => {
     const { data, error } = await supabase
       .from("candidates")
-      .select("*")
-      .eq("company_id", companyId);
+      .select("*");
 
     if (error) throw error;
     return data || [];
@@ -52,31 +51,25 @@ const { data: candidates = [] } = useQuery({
 });
 
 const { data: clients = [] } = useQuery({
-  queryKey: ["clients"],
-  enabled: true,
+  queryKey: ["daily-report-clients"],
+  enabled: !!user,
   queryFn: async () => {
     const { data, error } = await supabase
       .from("clients")
       .select("*");
 
-    console.log("CLIENT QUERY RESULT", data);
-    console.log("CLIENT QUERY ERROR", error);
-
     if (error) throw error;
-
     return data || [];
   },
 });
-console.log("COMPANY ID", companyId);
-console.log("CLIENTS FROM QUERY", clients);
+
 const { data: positions = [] } = useQuery({
-  queryKey: ["positions"],
-  enabled: !!companyId,
+  queryKey: ["daily-report-positions"],
+  enabled: !!user,
   queryFn: async () => {
     const { data, error } = await supabase
       .from("positions")
-      .select("*")
-      .eq("company_id", companyId);
+      .select("*");
 
     if (error) throw error;
     return data || [];
@@ -264,12 +257,13 @@ if (error) throw error;
     setSaving(false);
   };
 
-  return (
+    return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       <div className="lg:col-span-4">
         <ReportCalendar reportDates={reportDates} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
       </div>
       <div className="lg:col-span-8">
+        
         <ReportEditor
   selectedDate={selectedDate}
   workSummary={workSummary}

@@ -74,19 +74,20 @@ export default function CallLogs({
     enabled: !!companyId,
   });
 
-  // 3. Fetch Clients (Companies)
+  
+    // 3. Fetch Clients (Companies)
   const { data: companies = [] } = useQuery({
-  queryKey: ["clients-suggestions", companyId],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from("clients")
-      .select("id, company_name");
+    queryKey: ["clients-suggestions", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("clients")
+       .select("id, name");
 
-    if (error) throw error;
-    return data || [];
-  },
-  enabled: !!companyId,
-});
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!companyId,
+  });
 
   // 4. Fetch Job Positions
   const { data: positions = [] } = useQuery({

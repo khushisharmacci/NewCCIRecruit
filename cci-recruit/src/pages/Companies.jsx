@@ -76,10 +76,13 @@ export default function Companies() {
   const openCreate = () => {setEditItem(null);setForm({ name: "", industry: "", contact_person: "", contact_email: "", contact_phone: "", address: "", status: "Active", notes: "" });setDialogOpen(true);};
   const openEdit = (c) => {setEditItem(c);setForm({ name: c.name || "", industry: c.industry || "", contact_person: c.contact_person || "", contact_email: c.contact_email || "", contact_phone: c.contact_phone || "", address: c.address || "", status: c.status || "Active", notes: c.notes || "" });setDialogOpen(true);};
 
-  const handleSave = (e) => {
+    const handleSave = (e) => {
     e.preventDefault();
-    if (editItem) updateMutation.mutate({ id: editItem.id, data: form });else
-    createMutation.mutate(form);
+    if (editItem) {
+      updateMutation.mutate({ id: editItem.id, data: form });
+    } else {
+      createMutation.mutate(stampRecord(form));
+    }
   };
 
   const filtered = clients.filter((c) =>
