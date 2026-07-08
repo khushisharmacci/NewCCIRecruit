@@ -354,7 +354,7 @@ if (!tableName) {
 
     const BATCH_SIZE = 50;
 
-    for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+        for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
       const batch = allRows.slice(i, i + BATCH_SIZE);
 
       await Promise.all(
@@ -367,28 +367,26 @@ if (!tableName) {
 
           Object.entries(mappings).forEach(([header, field]) => {
             if (!field) return;
-
             if (row[header] === undefined) return;
-
             if (row[header] === "") return;
 
             const value = row[header];
-
             let converted = value;
 
-if (NUMERIC_FIELDS.includes(field)) {
-  const cleaned = String(value).replace(/[^0-9.]/g, "");
-  converted = cleaned ? Number(cleaned) : null;
-}
-// Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD
-if (field === "sent_on" && value) {
-  const str = String(value).trim();
+            if (NUMERIC_FIELDS.includes(field)) {
+              const cleaned = String(value).replace(/[^0-9.]/g, "");
+              converted = cleaned ? Number(cleaned) : null;
+            }
 
-  if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(str)) {
-    const [day, month, year] = str.split(/[-/]/);
-    converted = `${year}-${month}-${day}`;
-  }
-}
+            // Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD
+            if (field === "sent_on" && value) {
+              const str = String(value).trim();
+              if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(str)) {
+                const [day, month, year] = str.split(/[-/]/);
+                converted = `${year}-${month}-${day}`;
+              }
+            }
+
             if (customFields.find((cf) => cf.key === field)) {
               customData[field] = converted;
             } else {
@@ -397,75 +395,57 @@ if (field === "sent_on" && value) {
           });
 
           if (
-  Object.keys(customData).length &&
-  entityDef.optional.includes("remarks")
-) {
-  record.remarks = record.remarks
-    ? record.remarks +
-      "\n\nCustom Fields:\n" +
-      JSON.stringify(customData, null, 2)
-    : "Custom Fields:\n" +
-      JSON.stringify(customData, null, 2);
-}
-
-           record.company_id = companyId;
-
-           if (entity === "Candidate") {
-           record.data_file_id = dataFile.id;
-           record.spreadsheet_id = dataFile.id;
+            Object.keys(customData).length &&
+            entityDef.optional.includes("remarks")
+          ) {
+            record.remarks = record.remarks
+              ? record.remarks +
+                "\n\nCustom Fields:\n" +
+                JSON.stringify(customData, null, 2)
+              : "Custom Fields:\n" +
+                JSON.stringify(customData, null, 2);
           }
 
+          record.company_id = companyId;
+
+          if (entity === "Candidate") {
+            record.data_file_id = dataFile.id;
+            record.spreadsheet_id = dataFile.id;
+          }
+
+          let insertedId = null;
           try {
             const { data: inserted, error } = await supabase
-  .from(tableName)
-  .insert([record])
-  .select()
-  .single();
+              .from(tableName)
+              .insert([record])
+              .select()
+              .single();
 
-if (error) throw error;
-
-console.log("INSERT RECORD", record);
-
-if (error) {
-  console.error("SUPABASE INSERT ERROR:", error);
-  throw error;
-}
-
+            if (error) throw error;
+            insertedId = inserted.id;
             success++;
-            if (entity === "Candidate") {
-              spreadsheetRows.push({
-             __id: crypto.randomUUID(),
-
-             ...row,
-
-             _candidate_id: inserted.id,
-              spreadsheet_id: dataFile.id,
-});
-  
-}
           } catch (err) {
-  console.error("=================================");
-  console.error("IMPORT FAILED");
-  console.error("Row Number:", i + batch.indexOf(row) + 2);
+            console.error("=================================");
+            console.error("IMPORT FAILED");
+            console.error("Row Number:", i + batch.indexOf(row) + 2);
+            console.error("MESSAGE:", err.message);
+            console.error("DETAILS:", err.details);
+            console.error("CODE:", err.code);
 
-  console.log("TABLE:", tableName);
-  console.log("RECORD:", record);
-  console.log("ROW:", row);
+            failed++;
+          }
 
-  console.error("MESSAGE:", err.message);
-  console.error("DETAILS:", err.details);
-  console.error("HINT:", err.hint);
-  console.error("CODE:", err.code);
-
-  failed++;
-
-  // TEMPORARY: stop on first error so we can see it
-  throw err;
-}
+          if (entity === "Candidate") {
+            spreadsheetRows.push({
+              __id: crypto.randomUUID(),
+              ...row,
+              ...(insertedId ? { _candidate_id: insertedId, spreadsheet_id: dataFile.id } : {})
+            });
+          }
         })
       );
     }
-
+    
     const { error: updateError } = await supabase
     .from("data_files")
     .update({

@@ -239,6 +239,38 @@ export default function ColumnMapper({
     setSavingTemplate(false);
   };
 
+    const handleContinue = () => {
+    const finalMappings = { ...mappings };
+    const finalCustomFields = [...customFields];
+
+    headers.forEach((header) => {
+      // If the column header is not mapped to any field, map it as a custom field
+      if (!finalMappings[header]) {
+        let fieldKey = header.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+        if (!fieldKey) {
+          fieldKey = "custom_field";
+        }
+
+        // Ensure key uniqueness so it doesn't clash with system or other custom fields
+        let uniqueKey = fieldKey;
+        let counter = 1;
+        while (
+          entityDef.required.includes(uniqueKey) ||
+          entityDef.optional.includes(uniqueKey) ||
+          finalCustomFields.some((cf) => cf.key === uniqueKey)
+        ) {
+          uniqueKey = `${fieldKey}_${counter}`;
+          counter++;
+        }
+
+        finalCustomFields.push({ key: uniqueKey, label: header });
+        finalMappings[header] = uniqueKey;
+      }
+    });
+
+    onContinue(finalMappings, finalCustomFields);
+  };
+
   // Count mapped
   const mappedCount = Object.values(mappings).filter(Boolean).length;
   const missingRequired = entityDef.required.filter(
@@ -446,7 +478,7 @@ export default function ColumnMapper({
         </Button>
         <Button
           className="flex-1 gap-2"
-          onClick={() => onContinue(mappings, customFields)}
+          onClick={handleContinue}
           disabled={mappedCount === 0}
         >
           Preview & Import <ArrowRight className="h-4 w-4" />
