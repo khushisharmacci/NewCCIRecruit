@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useTenant } from "@/lib/tenant";
 import { useAuth } from "@/lib/AuthContext";
 import { can } from "@/lib/roles";
+import { useLocation } from "react-router-dom";
 
 import DCStats from "@/components/datacenter/DCStats";
 import FolderSidebar from "@/components/datacenter/FolderSidebar";
@@ -31,6 +32,17 @@ export default function DataCenter() {
   const [showUpload, setShowUpload] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [editingFile, setEditingFile] = useState(null);
+
+    const location = useLocation();
+
+  useEffect(() => {
+    // If user was navigated here with the autoUpload request, trigger the upload popup
+    if (location.state?.autoUpload) {
+      setShowUpload(true);
+      // Clean up navigation state so it doesn't auto-open again on a manual page refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
   
 const { data: folders = [], isLoading: loadingFolders } = useQuery({
   queryKey: ["data-folders", companyId],

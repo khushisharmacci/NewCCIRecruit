@@ -7,8 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Search, Building2, Plus, Network } from "lucide-react";
 import PositionNode from "@/components/positions/PositionNode";
+import SpreadsheetViewer from "@/components/spreadsheet/SpreadsheetViewer";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
+import { Search, Building2, Plus, Network, AlertCircle, ArrowRight } from "lucide-react";
 
 export default function Positions() {
   const qc = useQueryClient();
@@ -36,6 +39,43 @@ export default function Positions() {
   const filteredClients = companySearch.trim()
     ? clients.filter(c => (c.name || "").toLowerCase().includes(companySearch.toLowerCase())).slice(0, 8)
     : clients.slice(0, 8);
+
+      const [openFile, setOpenFile] = useState(null);
+
+  // Fetch all spreadsheets to match by name
+  const { data: files = [] } = useQuery({
+    queryKey: ["data-files"], // <-- Removed companyId
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("data_files")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
+    const handleOpenSpreadsheet = (positionTitle) => {
+    const norm = (str) => String(str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const normTitle = norm(positionTitle);
+
+    // Fuzzy match position title to spreadsheet name
+    const match = files.find(file => {
+      const normFileName = norm(file.name);
+      const normOriginalName = norm(file.original_filename);
+      return normFileName.includes(normTitle) || normTitle.includes(normFileName) || 
+             normOriginalName.includes(normTitle) || normTitle.includes(normOriginalName);
+    });
+
+    if (match) {
+      setOpenFile(match);
+    } else {
+      setMissingSpreadsheetFor(positionTitle); // <-- Open the missing spreadsheet dialog
+    }
+  };
+
+  const navigate = useNavigate();
+  const [missingSpreadsheetFor, setMissingSpreadsheetFor] = useState(null);
 
   const { data: positions = [], isLoading } = useQuery({
   queryKey: ["positions"],
@@ -199,6 +239,12 @@ const positionsByCompany = useMemo(() => {
             </div>
           )}
         </div>
+          {openFile && (
+        <SpreadsheetViewer
+          file={openFile}
+          onClose={() => setOpenFile(null)}
+        />
+      )}
       </div>
 
       <div className="grid gap-6">
@@ -242,6 +288,8 @@ const positionsByCompany = useMemo(() => {
             <PositionNode
               key={node.id}
               node={node}
+              client={client}
+              onOpenSpreadsheet={handleOpenSpreadsheet}
               children={companyPositions}
               allNodes={companyPositions}
               onAdd={handleAdd}
@@ -306,6 +354,33 @@ const positionsByCompany = useMemo(() => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+            {/* Spreadsheet Not Found Dialog */}
+      <Dialog open={!!missingSpreadsheetFor} onOpenChange={(open) => { if (!open) setMissingSpreadsheetFor(null); }}>
+        <DialogContent className="max-w-md text-center p-8 space-y-4">
+          <div className="h-12 w-12 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto text-amber-500 animate-pulse">
+            <AlertCircle className="h-6 w-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="font-semibold text-foreground text-lg">Spreadsheet not created</h3>
+            <p className="text-muted-foreground text-sm">
+              There is no spreadsheet matching <strong className="text-foreground">{missingSpreadsheetFor}</strong> in the Data Center.
+            </p>
+          </div>
+          <div className="flex justify-center gap-3 pt-2">
+            <Button variant="outline" onClick={() => setMissingSpreadsheetFor(null)}>Cancel</Button>
+            <Button 
+              onClick={() => {
+                setMissingSpreadsheetFor(null);
+                // Redirect to data center with instructions to auto-open upload wizard
+                navigate("/data-center", { state: { autoUpload: true } });
+              }}
+              className="gap-2"
+            >
+              Go to Data Center <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

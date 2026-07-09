@@ -61,11 +61,20 @@ export default function SpreadsheetViewer({
 const [activeSheet, setActiveSheet] = useState(0);
 
 
-        const columnDefs = (spreadsheet.columns ?? []).map((column) => {
+            const columnDefs = (spreadsheet.columns ?? []).map((column) => {
         const isSrNo = column.toLowerCase() === "sr no" || column.toLowerCase() === "sr. no";
         return {
             field: column,
             headerName: column,
+            // Override AG Grid deep dot notation to read properties flatly
+            valueGetter: (params) => params.data ? params.data[column] : null,
+            valueSetter: (params) => {
+                if (params.data) {
+                    params.data[column] = params.newValue;
+                    return true;
+                }
+                return false;
+            },
             editable: true,
             sortable: true,
             filter: isSrNo ? "agNumberColumnFilter" : true,

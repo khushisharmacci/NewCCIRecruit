@@ -5,7 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Archive, RotateCcw, User, MapPin } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ChevronRight, ChevronDown, Plus, Pencil, Trash2, Archive, RotateCcw, User, MapPin, FileText, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -18,11 +19,28 @@ const statusColors = {
   Archived: "bg-zinc-500/15 text-zinc-400",
 };
 
-export default function PositionNode({ node, children, allNodes, onAdd, onEdit, onDelete, onArchive, onReopen, depth }) {
+export default function PositionNode({ node, client, children, allNodes, onAdd, onEdit, onDelete, onOpenSpreadsheet, depth }) {
   const [expanded, setExpanded] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(null);
   const [form, setForm] = useState({ title: "", department: "", description: "", assigned_recruiter: "" });
+
+  const navigate = useNavigate();
+
+  const handleOpenSpreadsheet = () => {
+    if (onOpenSpreadsheet) {
+      onOpenSpreadsheet(node.title);
+    }
+  };
+
+  const handleViewJD = () => {
+    navigate("/recruiter-iq", {
+      state: {
+        positionTitle: node.title,
+        clientName: client?.name || ""
+      }
+    });
+  };
 
   const childNodes = children.filter(c => c.parent_id === node.id);
   const hasChildren = childNodes.length > 0;
@@ -52,7 +70,7 @@ export default function PositionNode({ node, children, allNodes, onAdd, onEdit, 
   department: form.department.trim(),
   description: form.description.trim(),
   assigned_recruiter: form.assigned_recruiter.trim(),
-  location: form.location.trim(),
+  location: (form.location || "").trim(),
 
   company_id: client.id,
   client_name: client.name,
@@ -98,15 +116,18 @@ if (editMode === "add") {
             {node.assigned_recruiter && <span className="text-xs text-muted-foreground">· {node.assigned_recruiter}</span>}
           </div>
         </div>
-        <div className="flex gap-0.5 shrink-0">
-          <button onClick={openAdd} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-primary" title="Add child"><Plus className="h-3.5 w-3.5" /></button>
+                        <div className="flex gap-0.5 shrink-0">
+          {/* 1. Arrow button opens spreadsheet */}
+          <button onClick={handleOpenSpreadsheet} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-primary" title="Open Spreadsheet"><ArrowRight className="h-3.5 w-3.5" /></button>
+          
+          {/* 2. Edit button */}
           <button onClick={openEdit} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
-          {isArchived ? (
-            <button onClick={() => onReopen(node.id)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-emerald-400" title="Reopen"><RotateCcw className="h-3.5 w-3.5" /></button>
-          ) : (
-            <button onClick={() => onArchive(node.id)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-amber-400" title="Archive"><Archive className="h-3.5 w-3.5" /></button>
-          )}
+          
+          {/* 3. Delete button */}
           <button onClick={() => onDelete(node.id)} className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+          
+          {/* 4. Single View JD button */}
+          <button onClick={handleViewJD} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-primary" title="View JD"><FileText className="h-3.5 w-3.5" /></button>
         </div>
       </div>
       {hasChildren && expanded && (
@@ -115,6 +136,8 @@ if (editMode === "add") {
             <PositionNode
               key={child.id}
               node={child}
+              client={client}
+              onOpenSpreadsheet={onOpenSpreadsheet}
               children={children}
               allNodes={allNodes}
               onAdd={onAdd}

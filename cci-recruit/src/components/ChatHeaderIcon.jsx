@@ -50,7 +50,10 @@ export default function ChatHeaderIcon() {
     if (m.sender_id === user?.id) return false;
 
     try {
-      return !(m.read_by || []).includes(user?.id);
+      const readByArray = typeof m.read_by === "string" 
+        ? JSON.parse(m.read_by || "[]") 
+        : (m.read_by || []);
+      return !readByArray.includes(user?.id);
     } catch {
       return true;
     }

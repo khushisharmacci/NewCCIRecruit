@@ -32,6 +32,7 @@ const FIELD_ALIASES = {
   updated_by: ["updated by", "updated_by"],
   spoken_by: ["spoken by", "spoken_by"],
   candidate_date: ["candidate date", "candidate_date"],
+  row_order: ["sr no", "sr. no", "sr.no.", "sr.no", "serial number", "s.no.", "s.no", "sno"],
 };
 
 /**

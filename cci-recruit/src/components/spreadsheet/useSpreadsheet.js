@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/tenant";
 import { mapHeaderToField } from "@/lib/syncService";
+import { toast } from "sonner";
 
 export default function useSpreadsheet(fileId) {
   const queryClient = useQueryClient();
@@ -36,35 +37,78 @@ export default function useSpreadsheet(fileId) {
         },
     });
 
-        useEffect(() => {
-        if (!data) return;
+            useEffect(() => {
+    if (!data) return;
 
-        setColumns(data.columns ?? []);
+    const cols = data.columns ?? [];
+    setColumns(cols);
+    
+    let loadedRows = (data.rows_data ?? []).map((row) => ({
+      __id: row.__id ?? crypto.randomUUID(),
+      ...row,
+    }));
+
+    // Find the Candidate Name column (now including "candidate")
+    const nameAliases = ["candidate name", "name", "full name", "candidate", "candidate full name"];
+    const nameCol = cols.find(
+      (col) => nameAliases.includes(col.toLowerCase())
+    );
+    
+    const srNoCol = cols.find(
+      (col) =>
+        col.toLowerCase() === "sr no" ||
+        col.toLowerCase() === "sr. no" ||
+        col.toLowerCase() === "sr.no."
+    );
+
+    // 1. De-duplicate rows by Candidate Name
+    if (nameCol) {
+      const seen = new Set();
+      loadedRows = loadedRows.filter((row) => {
+        const name = String(row[nameCol] || "").trim().toLowerCase();
+        if (!name) return true; // Keep empty rows
+        if (seen.has(name)) return false;
+        seen.add(name);
+        return true;
+      });
+    }
+
+    // 2. Sort rows numerically by their original SR.NO. values
+    if (srNoCol) {
+      loadedRows.sort((a, b) => {
+        const valA = parseInt(String(a[srNoCol] ?? "").replace(/[^0-9]/g, ""), 10);
+        const valB = parseInt(String(b[srNoCol] ?? "").replace(/[^0-9]/g, ""), 10);
         
-        let loadedRows = (data.rows_data ?? []).map((row) => ({
-            __id: row.__id ?? crypto.randomUUID(),
-            ...row,
-        }));
+        const numA = isNaN(valA) ? 999999 : valA;
+        const numB = isNaN(valB) ? 999999 : valB;
+        
+        return numA - numB;
+      });
 
-        // Sort by 'SR NO' or 'SR. NO' numerically if the column exists
-        const srNoCol = (data.columns ?? []).find(
-            (col) => col.toLowerCase() === "sr no" || col.toLowerCase() === "sr. no"
+      // 3. Re-assign sequential SR.NO. values (1, 2, 3...)
+      let counter = 1;
+      loadedRows.forEach((row) => {
+        // Check if the row contains any valid candidate data
+        const hasData = Object.keys(row).some(
+          (k) =>
+            !["__id", "_candidate_id", "spreadsheet_id", srNoCol].includes(k) &&
+            String(row[k] || "").trim() !== ""
         );
-
-        if (srNoCol) {
-            loadedRows.sort((a, b) => {
-                const valA = parseInt(String(a[srNoCol] ?? "").replace(/[^0-9]/g, ""), 10);
-                const valB = parseInt(String(b[srNoCol] ?? "").replace(/[^0-9]/g, ""), 10);
-                
-                const numA = isNaN(valA) ? 999999 : valA;
-                const numB = isNaN(valB) ? 999999 : valB;
-                
-                return numA - numB;
-            });
+        if (hasData) {
+          row[srNoCol] = String(counter++);
+        } else {
+          row[srNoCol] = "";
         }
+      });
+    }
 
-        setRows(loadedRows);
-    }, [data]);
+    setRows(loadedRows);
+
+    // 4. Save the clean, de-duplicated and sorted rows back to the database
+    if (data.rows_data && loadedRows.length !== data.rows_data.length) {
+      saveSpreadsheet(loadedRows);
+    }
+  }, [data]);
 
     const filteredRows = useMemo(() => {
         if (!search) return rows;
@@ -249,7 +293,7 @@ export default function useSpreadsheet(fileId) {
     }
   });
 
-  const syncToCandidates = useMutation({
+    const syncToCandidates = useMutation({
     mutationFn: async () => {
       // 1. Fetch file
       const { data: file, error: fileError } = await supabase
@@ -268,11 +312,10 @@ export default function useSpreadsheet(fileId) {
       const columns = file.columns || [];
 
       const aliases = {
-        row_order: ["SR.NO.", "SR NO", "SR. NO", "S.NO.", "S. NO", "S NO", "Serial Number"],
-        full_name: ["Name", "Candidate Name", "Full Name"],
+        full_name: ["Name", "Candidate Name", "Full Name", "Candidate", "Candidate Full Name"],
         email: ["Email", "Email ID", "Email Address"],
         phone: ["Phone", "Contact Number", "Mobile", "Mobile Number"],
-        current_company: ["Company", "Current Company", "Current Org"],
+        current_company: ["Company", "Current Company", "Current Org", "Current Organisation"],
         position: ["Position", "Position Title", "Job Title"],
         notes: ["Remarks", "Notes"],
         status: ["Status"],
@@ -282,6 +325,18 @@ export default function useSpreadsheet(fileId) {
           "Years of Experience",
         ],
         location: ["Location"],
+        current_job_role: ["Current Role", "Designation", "Current Designation"],
+        expected_ctc: ["Expected CTC", "Expected Salary"],
+        linkedin: ["Linkedin", "Linkedin Profile Link", "Linkedin Link"],
+        academics: ["Academics", "Education", "Qualification"],
+        current_ctc: ["Current Fixed CTC", "Current CTC", "Fixed CTC"],
+        sourced_by: ["Sourced By", "Sourced_By"],
+        hr: ["HR", "HR Name"],
+        sent_on: ["Sent On", "Sent_On"],
+        updated_by: ["Updated By", "Updated_By"],
+        spoken_by: ["Spoken By", "Spoken_By"],
+        candidate_date: ["Candidate Date", "Candidate_Date"],
+        row_order: ["sr no", "sr. no", "sr.no.", "sr.no", "serial number", "s.no.", "s.no", "sno"],
       };
 
       // Find the mapped column headers
@@ -321,12 +376,21 @@ export default function useSpreadsheet(fileId) {
           data_file_id: fileId,
         };
 
-        Object.entries(mappings).forEach(([col, field]) => {
+                  Object.entries(mappings).forEach(([col, field]) => {
           const val = row[col];
           if (val !== undefined && val !== null && val !== "") {
-            if (field === "experience_years" || field === "expected_salary") {
+            if (field === "experience_years" || field === "expected_ctc" || field === "row_order") {
               const num = parseFloat(String(val).replace(/[^0-9.]/g, ""));
               candidateData[field] = isNaN(num) ? null : num;
+            } else if (field === "sent_on") {
+              // Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD for PostgreSQL
+              const str = String(val).trim();
+              if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(str)) {
+                const [day, month, year] = str.split(/[-/]/);
+                candidateData[field] = `${year}-${month}-${day}`;
+              } else {
+                candidateData[field] = val;
+              }
             } else {
               candidateData[field] = val;
             }
@@ -390,11 +454,8 @@ export default function useSpreadsheet(fileId) {
           if (!candidateData.email) {
             candidateData.email = `noemail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@placeholder.local`;
           }
-          if (!candidateData.status) {
-            candidateData.status = "Applied";
-          }
 
-          // Insert new candidate
+
           const { data: inserted, error } = await supabase
             .from("candidates")
             .insert([candidateData])
@@ -411,7 +472,7 @@ export default function useSpreadsheet(fileId) {
         }
       }
 
-      // Update file rows_data in Supabase
+
       const { error: fileUpdateError } = await supabase
         .from("data_files")
         .update({
@@ -425,21 +486,16 @@ export default function useSpreadsheet(fileId) {
       return { created, updated };
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({
-        queryKey: ["spreadsheet", fileId],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["candidates"],
-      });
-      if (result.created === 0 && result.updated === 0) {
-        alert("All candidates are already in sync.");
-      } else {
-        alert(`Sync completed successfully!\nCreated: ${result.created} new candidates\nUpdated: ${result.updated} existing candidates.`);
-      }
+      queryClient.invalidateQueries({ queryKey: ["spreadsheet", fileId] });
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success(
+        `Sync complete! Created ${result.created} and updated ${result.updated} candidates.`
+      );
     },
     onError: (err) => {
-      alert(`Sync failed: ${err.message}`);
-    }
+      console.error("Sync to candidates failed:", err);
+      toast.error("Synchronization failed.");
+    },
   });
 
   function exportCSV() {

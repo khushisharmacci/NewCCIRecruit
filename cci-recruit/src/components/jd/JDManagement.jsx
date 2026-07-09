@@ -1,19 +1,19 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/tenant";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { FileText, Upload, Plus, Trash2, Eye, ArrowLeft, Users, Loader2 } from "lucide-react";
+import { FileText, Upload, Plus, Trash2, Eye, ArrowLeft, Users, Loader2, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import ReactMarkdown from "react-markdown";
 
-function JDCard({ jd, onOpen, onDelete }) {
+function JDCard({ jd, onOpen, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = jd.content && jd.content.length > 200;
   const preview = expanded ? jd.content : (jd.content || "").slice(0, 200);
@@ -25,23 +25,28 @@ function JDCard({ jd, onOpen, onDelete }) {
           <h3 className="font-semibold text-foreground truncate">{jd.title}</h3>
           {jd.client_name && <p className="text-sm text-muted-foreground">{jd.client_name}</p>}
         </div>
-        <div className="flex items-center gap-2">
-
-  {jd.publicUrl && (
-    <FileText className="h-5 w-5 text-primary" />
-  )}
-
-  <button
-    onClick={onDelete}
-    className="h-7 w-7 rounded-md bg-red-500/10 hover:bg-red-500/20 flex items-center justify-center"
-  >
-    <Trash2 className="h-3.5 w-3.5 text-red-400" />
-  </button>
-
-</div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {jd.publicUrl && (
+            <FileText className="h-4 w-4 text-primary" />
+          )}
+          <button
+            onClick={onEdit}
+            className="h-7 w-7 rounded-md bg-primary/10 hover:bg-primary/20 flex items-center justify-center"
+            title="Edit JD"
+          >
+            <Pencil className="h-3.5 w-3.5 text-primary" />
+          </button>
+          <button
+            onClick={onDelete}
+            className="h-7 w-7 rounded-md bg-red-500/10 hover:bg-red-500/20 flex items-center justify-center"
+            title="Delete JD"
+          >
+            <Trash2 className="h-3.5 w-3.5 text-red-400" />
+          </button>
+        </div>
       </div>
-      <div className="text-xs text-muted-foreground">
-        Created: {jd.created_date ? format(new Date(jd.created_date), "MMM d, yyyy") : "—"}
+            <div className="text-xs text-muted-foreground">
+        Created: {jd.created_at ? format(new Date(jd.created_at), "MMM d, yyyy, h:mm a") : "—"}
       </div>
       {jd.content && (
         <div className="text-sm text-muted-foreground">
@@ -60,61 +65,47 @@ function JDCard({ jd, onOpen, onDelete }) {
   );
 }
 
-function JDDetail({ jd, onBack }) {
+function JDDetail({ jd, onEdit, onBack }) {
   const { tenantFilter } = useTenant();
   const { data: candidates = [], isLoading } = useQuery({
     queryKey: ["jd-connected-candidates", jd.id],
     queryFn: async () => {
-  let query = supabase
-    .from("candidates")
-    .select("*")
-    .eq("position", jd.title);
+      let query = supabase
+        .from("candidates")
+        .select("*")
+        .eq("position", jd.title);
 
-  const filters = tenantFilter();
+      const filters = tenantFilter();
 
-  if (filters.company_id) {
-    query = query.eq("company_id", filters.company_id);
-  }
+      if (filters.company_id) {
+        query = query.eq("company_id", filters.company_id);
+      }
 
-  const { data, error } = await query.order(
-    "created_at",
-    { ascending: false }
-  );
-
-  if (error) throw error;
-
-  return data || [];
-},
+      const { data, error } = await query.order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const { data: submissions = [] } = useQuery({
     queryKey: ["jd-submissions", jd.id],
     queryFn: async () => {
-  let query = supabase
-    .from("client_submissions")
-    .select("*");
+      let query = supabase
+        .from("client_submissions")
+        .select("*");
 
-  const filters = tenantFilter();
+      const filters = tenantFilter();
 
-  if (filters.company_id) {
-    query = query.eq(
-      "company_id",
-      filters.company_id
-    );
-  }
+      if (filters.company_id) {
+        query = query.eq("company_id", filters.company_id);
+      }
 
-  const { data, error } =
-    await query.order("date_sent", {
-      ascending: false,
-    });
-
-  if (error) throw error;
-
-  return data || [];
-},
+      const { data, error } = await query.order("date_sent", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
   });
 
-  // Match submissions to this JD's client
   const connectedCandidates = candidates.filter((c) =>
     submissions.some((s) => s.candidate_id === c.id && (!jd.client_name || s.client_name === jd.client_name))
   );
@@ -126,17 +117,22 @@ function JDDetail({ jd, onBack }) {
       </button>
 
       <div className="bg-card rounded-xl border border-border p-6 space-y-4">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-foreground">{jd.title}</h2>
             {jd.client_name && <p className="text-sm text-muted-foreground">Client: {jd.client_name}</p>}
-            <p className="text-xs text-muted-foreground mt-1">Created: {jd.created_date ? format(new Date(jd.created_date), "MMM d, yyyy") : "—"}</p>
+            <p className="text-xs text-muted-foreground mt-1">Created: {jd.created_at ? format(new Date(jd.created_at), "MMM d, yyyy, h:mm a") : "—"}</p>
           </div>
-          {jd.publicUrl && (
-            <a href={jd.publicUrl} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" size="sm" className="gap-1"><FileText className="h-3.5 w-3.5" /> View File</Button>
-            </a>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={onEdit} className="gap-1">
+              <Pencil className="h-3.5 w-3.5" /> Edit JD
+            </Button>
+            {jd.publicUrl && (
+              <a href={jd.publicUrl} target="_blank" rel="noopener noreferrer">
+                <Button variant="outline" size="sm" className="gap-1"><FileText className="h-3.5 w-3.5" /> View File</Button>
+              </a>
+            )}
+          </div>
         </div>
         {jd.content && (
           <div className="prose prose-sm max-w-none text-muted-foreground">
@@ -188,104 +184,114 @@ function JDDetail({ jd, onBack }) {
 
 export default function JDManagement() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const { tenantFilter, stampRecord } = useTenant();
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedJD, setSelectedJD] = useState(null);
+  const [editJDId, setEditJDId] = useState(null);
   const [form, setForm] = useState({ title: "", client_name: "", content: "", source_type: "manual" });
   const [uploading, setUploading] = useState(false);
+  const [clearedSearch, setClearedSearch] = useState(false);
+
+  const searchState = !clearedSearch ? location.state : null;
 
   const { data: jds = [], isLoading } = useQuery({
     queryKey: ["job-descriptions"],
     queryFn: async () => {
-  let query = supabase
-    .from("job_descriptions")
-    .select("*");
-
-  const filters = tenantFilter();
-
-  if (filters.company_id) {
-    query = query.eq(
-      "company_id",
-      filters.company_id
-    );
-  }
-
-  const { data, error } =
-    await query.order("created_at", {
-      ascending: false,
-    });
-
-  if (error) throw error;
-
-  return data || [];
-},
+      let query = supabase.from("job_descriptions").select("*");
+      const filters = tenantFilter();
+      if (filters.company_id) {
+        query = query.eq("company_id", filters.company_id);
+      }
+      const { data, error } = await query.order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
   });
+
+  // Automatically select matching JD on load
+  useEffect(() => {
+    if (searchState?.positionTitle && jds.length > 0) {
+      const match = jds.find(
+        (jd) =>
+          jd.title?.toLowerCase() === searchState.positionTitle.toLowerCase() &&
+          (!searchState.clientName || jd.client_name?.toLowerCase() === searchState.clientName.toLowerCase())
+      );
+      if (match) {
+        setSelectedJD(match);
+      }
+    }
+  }, [searchState, jds]);
 
   const createMutation = useMutation({
     mutationFn: async (data) => {
-  const { error } = await supabase
-    .from("job_descriptions")
-    .insert([
-      stampRecord(data),
-    ]);
+      const { error } = await supabase
+        .from("job_descriptions")
+        .insert([stampRecord(data)]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-descriptions"] });
+      setDialogOpen(false);
+    },
+  });
 
-  if (error) throw error;
-},
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["job-descriptions"] }); setDialogOpen(false); },
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }) => {
+      const { error } = await supabase
+        .from("job_descriptions")
+        .update(data)
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-descriptions"] });
+      setDialogOpen(false);
+      setEditJDId(null);
+      if (selectedJD && selectedJD.id === editJDId) {
+        setSelectedJD((prev) => ({ ...prev, ...form }));
+      }
+    },
   });
 
   const deleteMutation = useMutation({
-  mutationFn: async (jd) => {
-    if (jd.publicUrl) {
-      const fileName = jd.publicUrl.split("/").pop();
-
-      await supabase.storage
-        .from("job-descriptions")
-        .remove([fileName]);
-    }
-
-    const { error } = await supabase
-      .from("job_descriptions")
-      .delete()
-      .eq("id", jd.id);
-
-    if (error) throw error;
-  },
-
-  onSuccess: () => {
-    queryClient.invalidateQueries({
-      queryKey: ["job-descriptions"],
-    });
-  },
-});
+    mutationFn: async (jd) => {
+      if (jd.publicUrl) {
+        const fileName = jd.publicUrl.split("/").pop();
+        await supabase.storage.from("job-descriptions").remove([fileName]);
+      }
+      const { error } = await supabase.from("job_descriptions").delete().eq("id", jd.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-descriptions"] });
+    },
+  });
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setUploading(true);
     try {
-      const fileExt =
-  file.name.split(".").pop();
+      const fileName = `${Date.now()}-${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("job-descriptions")
+        .upload(fileName, file, { upsert: true });
 
-const fileName =
-  `${Date.now()}-${file.name}`;
+      if (uploadError) throw uploadError;
 
-const { error: uploadError } =
-  await supabase.storage
-    .from("job-descriptions")
-    .upload(fileName, file, {
-      upsert: true,
-    });
+      const { data: { publicUrl } } = supabase.storage
+        .from("job-descriptions")
+        .getPublicUrl(fileName);
 
-if (uploadError)
-  throw uploadError;
-
-const {
-  data: { publicUrl },
-} = supabase.storage
-  .from("job-descriptions")
-  .getPublicUrl(fileName);
-      setForm({ ...form, publicUrl, file_name: file.name, source_type: "upload", title: form.title || file.name.replace(/\.[^/.]+$/, "") });
+      setForm({
+        ...form,
+        publicUrl,
+        file_name: file.name,
+        source_type: "upload",
+        title: form.title || file.name.replace(/\.[^/.]+$/, ""),
+      });
     } catch (err) {
       console.error("JD upload failed:", err);
     }
@@ -293,67 +299,165 @@ const {
   };
 
   const handleSubmit = () => {
-    createMutation.mutate(form);
+    if (editJDId) {
+      updateMutation.mutate({ id: editJDId, data: form });
+    } else {
+      createMutation.mutate(form);
+    }
   };
 
-  if (selectedJD) {
-    return <JDDetail jd={selectedJD} onBack={() => setSelectedJD(null)} />;
+  const startEdit = (jd) => {
+    setEditJDId(jd.id);
+    setForm({
+      title: jd.title || "",
+      client_name: jd.client_name || "",
+      content: jd.content || "",
+      source_type: jd.source_type || "manual",
+      publicUrl: jd.publicUrl || "",
+      file_name: jd.file_name || "",
+    });
+    setDialogOpen(true);
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
   }
+
+  const match = searchState
+    ? jds.find(
+        (jd) =>
+          jd.title?.toLowerCase() === searchState.positionTitle.toLowerCase() &&
+          (!searchState.clientName || jd.client_name?.toLowerCase() === searchState.clientName.toLowerCase())
+      )
+    : null;
+
+  const showPlaceholder = searchState && !clearedSearch && !match;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-foreground flex items-center gap-2">
-          <FileText className="h-5 w-5 text-primary" /> Job Descriptions
-        </h3>
-        <Button size="sm" onClick={() => { setForm({ title: "", client_name: "", content: "", source_type: "manual" }); setDialogOpen(true); }} className="gap-2">
-          <Plus className="h-4 w-4" /> Add JD
-        </Button>
-      </div>
+      {selectedJD ? (
+        <JDDetail
+          jd={selectedJD}
+          onEdit={() => startEdit(selectedJD)}
+          onBack={() => {
+            setSelectedJD(null);
+            if (searchState) {
+              setClearedSearch(true);
+            }
+          }}
+        />
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" /> Job Descriptions
+            </h3>
+            <div className="flex gap-2">
+              {searchState && (
+                <Button variant="outline" size="sm" onClick={() => setClearedSearch(true)}>
+                  View All
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={() => {
+                  setForm({ title: "", client_name: "", content: "", source_type: "manual" });
+                  setEditJDId(null);
+                  setDialogOpen(true);
+                }}
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" /> Add JD
+              </Button>
+            </div>
+          </div>
 
-      {isLoading ? (
-  <div className="flex justify-center py-12">
-    <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-  </div>
-) : jds.length === 0 ? (
-  <div className="bg-card rounded-xl border border-border p-12 text-center">
-    <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-    <p className="text-muted-foreground text-sm">
-      No job descriptions yet. Click "Add JD" to get started.
-    </p>
-  </div>
-) : (
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    {jds.map((jd) => (
-      <JDCard
-        key={jd.id}
-        jd={jd}
-        onOpen={setSelectedJD}
-        onDelete={() => {
-  console.log("JD:", jd);
-  console.log("JD ID:", jd.id);
+          {showPlaceholder ? (
+            <div className="bg-card rounded-xl border border-border p-12 text-center max-w-lg mx-auto space-y-4 my-8">
+              <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto" />
+              <div className="space-y-1">
+                <h3 className="font-semibold text-foreground text-lg">JD not created yet</h3>
+                <p className="text-muted-foreground text-sm">
+                  There is no job description for <strong className="text-foreground">{searchState.positionTitle}</strong>
+                  {searchState.clientName && <> under <strong className="text-foreground">{searchState.clientName}</strong></>}.
+                </p>
+              </div>
+              <div className="flex justify-center gap-3 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setClearedSearch(true)}>
+                  View All JDs
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setForm({
+                      title: searchState.positionTitle,
+                      client_name: searchState.clientName || "",
+                      content: "",
+                      source_type: "manual",
+                    });
+                    setEditJDId(null);
+                    setDialogOpen(true);
+                  }}
+                  className="gap-2"
+                >
+                  <Plus className="h-4 w-4" /> Add JD
+                </Button>
+              </div>
+            </div>
+          ) : jds.length === 0 ? (
+            <div className="bg-card rounded-xl border border-border p-12 text-center">
+              <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-muted-foreground text-sm">
+                No job descriptions yet. Click "Add JD" to get started.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {jds.map((jd) => (
+                <JDCard
+                  key={jd.id}
+                  jd={jd}
+                  onOpen={setSelectedJD}
+                  onEdit={() => startEdit(jd)}
+                  onDelete={() => {
+                    if (window.confirm(`Delete "${jd.title}"?`)) {
+                      deleteMutation.mutate(jd);
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
-  if (window.confirm(`Delete "${jd.title}"?`)) {
-    deleteMutation.mutate(jd);
-  }
-}}
-      />
-    ))}
-  </div>
-)}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {/* The Dialog is now ALWAYS mounted here at the root level! */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setEditJDId(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add Job Description</DialogTitle>
+            <DialogTitle>{editJDId ? "Edit Job Description" : "Add Job Description"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>JD Title</Label>
-              <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Senior React Developer" />
+              <Input
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="e.g. Senior React Developer"
+              />
             </div>
             <div>
               <Label>Client Name</Label>
-              <Input value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} placeholder="Client name (optional)" />
+              <Input
+                value={form.client_name}
+                onChange={(e) => setForm({ ...form, client_name: e.target.value })}
+                placeholder="Client name (optional)"
+              />
             </div>
             <div>
               <Label>Upload JD File (PDF, DOCX, TXT)</Label>
@@ -375,13 +479,18 @@ const {
             </div>
             <div>
               <Label>JD Content (manual entry)</Label>
-              <Textarea value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} rows={6} placeholder="Paste or type the job description here..." />
+              <Textarea
+                value={form.content}
+                onChange={(e) => setForm({ ...form, content: e.target.value })}
+                rows={6}
+                placeholder="Paste or type the job description here..."
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!form.title || createMutation.isPending}>
-              {createMutation.isPending ? "Saving..." : "Save JD"}
+            <Button onClick={handleSubmit} disabled={!form.title || createMutation.isPending || updateMutation.isPending}>
+              {createMutation.isPending || updateMutation.isPending ? "Saving..." : editJDId ? "Update JD" : "Save JD"}
             </Button>
           </DialogFooter>
         </DialogContent>

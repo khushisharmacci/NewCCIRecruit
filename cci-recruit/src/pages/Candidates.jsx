@@ -80,7 +80,7 @@ export default function Candidates() {
 
     const aliases = {
       row_order: ["SR.NO.", "SR NO", "SR. NO", "S.NO.", "S. NO", "S NO", "Serial Number"],
-      full_name: ["Name", "Candidate Name", "Full Name"],
+      full_name: ["Name", "Candidate Name", "Full Name", "Candidate", "Candidate Full Name"],
       email: ["Email", "Email ID", "Email Address"],
       phone: ["Phone", "Contact Number", "Mobile", "Mobile Number"],
       current_company: ["Company", "Current Company", "Current Org"],
@@ -555,8 +555,8 @@ const handleSave = async (data) => {
     </th>
 
     <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
-      Experience
-    </th>
+       Sourced By
+     </th>
 
     <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
       Status
@@ -598,11 +598,11 @@ const handleSave = async (data) => {
                         <p className="text-xs text-muted-foreground">{c.email}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <p className="text-sm text-foreground">{c.current_job_role || "—"}</p>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                      <p className="text-sm text-foreground">{c.current_job_role || c.position || "—"}</p>
                       <p className="text-xs text-muted-foreground">{c.current_company || ""}</p>
                     </td>
-                    <td className="px-4 py-3 hidden lg:table-cell text-sm text-foreground">{c.experience_years ? `${c.experience_years} yrs` : "—"}</td>
+                    <td className="px-4 py-3 hidden lg:table-cell text-sm text-foreground">{c.sourced_by || "—"}</td>
                     <td className="px-4 py-3">
                       <span className={cn("inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium", statusColors[c.status])}>
                         {c.status}

@@ -297,8 +297,8 @@ export default function UploadWizard({
 //==================================================================================
 const handleImport = async () => {
   console.log("=== HANDLE IMPORT STARTED ===");
-let success = 0;
-let failed = 0;
+  let success = 0;
+  let failed = 0;
   setImporting(true);
 
   if (!file) {
@@ -306,25 +306,72 @@ let failed = 0;
     setImporting(false);
     return;
   }
-const tableMap = {
-  Candidate: "candidates",
-  Client: "clients",
-  Lead: "leads",
-  Position: "positions",
-  RevenueRecord: "revenue_records",
-  TeamGroup: "team_groups",
-};
 
-const tableName = tableMap[entity];
+  const tableMap = {
+    Candidate: "candidates",
+    Client: "clients",
+    Lead: "leads",
+    Position: "positions",
+    RevenueRecord: "revenue_records",
+    TeamGroup: "team_groups",
+  };
 
-if (!tableName) {
-  toast.error(`Unknown entity: ${entity}`);
-  setImporting(false);
-  return;
-}
+  const tableName = tableMap[entity];
+
+  if (!tableName) {
+    toast.error(`Unknown entity: ${entity}`);
+    setImporting(false);
+    return;
+  }
+
   try {
-    // Save uploaded spreadsheet metadata
+    // ─── DE-DUPLICATION PASS ───
+    const rowsToProcess = [];
+    const seenKeys = new Set();
 
+    allRows.forEach((row) => {
+      // Find the primary name identifier for this entity (e.g. "full_name" for Candidate)
+      const nameField = entityDef.required[0];
+      const nameHeader = Object.keys(mappings).find(k => mappings[k] === nameField);
+      const nameVal = nameHeader ? String(row[nameHeader] || "").trim() : "";
+
+      // Skip empty rows (no primary name/title)
+      if (!nameVal) return;
+
+      if (entity === "Candidate") {
+        const emailHeader = Object.keys(mappings).find(k => mappings[k] === "email");
+        const phoneHeader = Object.keys(mappings).find(k => mappings[k] === "phone");
+
+        const emailVal = emailHeader ? String(row[emailHeader] || "").trim().toLowerCase() : "";
+        const phoneVal = phoneHeader ? String(row[phoneHeader] || "").trim() : "";
+
+        // Build uniqueness keys
+        const emailKey = emailVal && !emailVal.includes("placeholder.local") ? `email:${emailVal}` : "";
+        const phoneKey = phoneVal ? `phone:${phoneVal}` : "";
+        const nameKey = nameVal ? `name:${nameVal.toLowerCase()}` : "";
+
+        let isDup = false;
+        if (emailKey && seenKeys.has(emailKey)) isDup = true;
+        if (phoneKey && seenKeys.has(phoneKey)) isDup = true;
+        if (nameKey && seenKeys.has(nameKey)) isDup = true;
+
+        if (!isDup) {
+          rowsToProcess.push(row);
+          if (emailKey) seenKeys.add(emailKey);
+          if (phoneKey) seenKeys.add(phoneKey);
+          if (nameKey) seenKeys.add(nameKey);
+        }
+      } else {
+        // General de-duplication by name/title for other entities
+        const key = `${nameField}:${nameVal.toLowerCase()}`;
+        if (!seenKeys.has(key)) {
+          rowsToProcess.push(row);
+          seenKeys.add(key);
+        }
+      }
+    });
+
+    // Save uploaded spreadsheet metadata
     const { data: dataFile, error: fileError } = await supabase
       .from("data_files")
       .insert([
@@ -335,10 +382,10 @@ if (!tableName) {
           folder_id: selectedFolder?.id ?? null,
           folder_name: selectedFolder?.name ?? null,
           entity_type: entity,
-          row_count: allRows.length,
+          row_count: rowsToProcess.length,
           column_count: headers.length,
           columns: headers,
-          rows_data: allRows.slice(0, 10000),
+          rows_data: rowsToProcess.slice(0, 10000),
           worksheets: sheets,
           imported_count: 0,
           sync_status: "processing",
@@ -351,11 +398,10 @@ if (!tableName) {
     if (fileError) throw fileError;
 
     const spreadsheetRows = [];
-
     const BATCH_SIZE = 50;
 
-        for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
-      const batch = allRows.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < rowsToProcess.length; i += BATCH_SIZE) {
+      const batch = rowsToProcess.slice(i, i + BATCH_SIZE);
 
       await Promise.all(
         batch.map(async (row) => {
@@ -406,27 +452,26 @@ if (!tableName) {
                 JSON.stringify(customData, null, 2);
           }
 
-                              record.company_id = companyId;
+          record.company_id = companyId;
 
           if (entity === "Candidate") {
             record.data_file_id = dataFile.id;
             record.spreadsheet_id = dataFile.id;
           }
 
-          // 1. Check if the row has a valid primary identifier (e.g. candidate name)
+          // Double check primary identifier
           const primaryIdField = entityDef.required[0];
           const hasPrimaryId = record[primaryIdField] && String(record[primaryIdField]).trim() !== "";
 
           let insertedId = null;
-          
-          // Only attempt database insert/update if the row has a name
+
           if (hasPrimaryId) {
-            // 2. Fallback for missing emails (prevents database NOT NULL failures)
+            // Fallback for missing emails (prevents database NOT NULL failures)
             if (entity === "Candidate" && !record.email) {
               record.email = `noemail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@placeholder.local`;
             }
 
-            // 3. Check if candidate already exists in database by Email or Phone
+            // Check if candidate already exists in database by Email or Phone
             let existingCandidateId = null;
             if (entity === "Candidate") {
               if (record.email && !record.email.includes("placeholder.local")) {
@@ -452,7 +497,7 @@ if (!tableName) {
               let inserted = null;
 
               if (existingCandidateId) {
-                // Candidate exists: Update their information instead of duplicate inserting
+                // Update existing candidate
                 const { data: updated, error: updateErr } = await supabase
                   .from(tableName)
                   .update(record)
@@ -462,7 +507,7 @@ if (!tableName) {
                 error = updateErr;
                 inserted = updated;
               } else {
-                // Candidate doesn't exist: Perform standard insert
+                // Insert new candidate
                 const { data: newInserted, error: insertErr } = await supabase
                   .from(tableName)
                   .insert([record])
@@ -494,27 +539,18 @@ if (!tableName) {
               ...(insertedId ? { _candidate_id: insertedId, spreadsheet_id: dataFile.id } : {})
             });
           }
-
-          if (entity === "Candidate") {
-            spreadsheetRows.push({
-              __id: crypto.randomUUID(),
-              ...row,
-              ...(insertedId ? { _candidate_id: insertedId, spreadsheet_id: dataFile.id } : {})
-            });
-          }
         })
       );
     }
-    
+
     const { error: updateError } = await supabase
-    .from("data_files")
-    .update({
+      .from("data_files")
+      .update({
         imported_count: success,
         sync_status: failed === 0 ? "synced" : "error",
-
         rows_data: spreadsheetRows,
-    })
-    .eq("id", dataFile.id);
+      })
+      .eq("id", dataFile.id);
 
     if (updateError) {
       console.error(updateError);
@@ -525,7 +561,7 @@ if (!tableName) {
     setImportResult({
       success,
       failed,
-      total: allRows.length,
+      total: rowsToProcess.length,
     });
 
     setStep("done");
@@ -535,7 +571,6 @@ if (!tableName) {
     );
   } catch (err) {
     console.error("IMPORT FAILED:", err);
-
     toast.error(err.message || "Import failed.");
   }
 
