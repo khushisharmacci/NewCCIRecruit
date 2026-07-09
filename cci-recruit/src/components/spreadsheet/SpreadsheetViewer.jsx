@@ -60,13 +60,93 @@ export default function SpreadsheetViewer({
 
 const [activeSheet, setActiveSheet] = useState(0);
 
+    const onCellKeyDown = async (e) => {
+    const keyEvent = e.event;
+    if (!keyEvent) return;
 
-            const columnDefs = (spreadsheet.columns ?? []).map((column) => {
-        const isSrNo = column.toLowerCase() === "sr no" || column.toLowerCase() === "sr. no";
+    const isCtrl = keyEvent.ctrlKey || keyEvent.metaKey; // Meta key for Mac Cmd
+
+    // ─── CTRL + C (Copy Cell) ───
+    if (isCtrl && keyEvent.key.toLowerCase() === "c") {
+      const api = e.api;
+      const cell = api.getFocusedCell();
+      if (!cell) return;
+
+      const rowNode = api.getDisplayedRowAtIndex(cell.rowIndex);
+      if (!rowNode) return;
+
+      const colId = cell.column.getId();
+      const value = rowNode.data[colId] ?? "";
+
+      try {
+        await navigator.clipboard.writeText(String(value));
+      } catch (err) {
+        console.error("Failed to copy cell text to clipboard:", err);
+      }
+    }
+
+    // ─── CTRL + V (Paste Range like Google Sheets) ───
+    if (isCtrl && keyEvent.key.toLowerCase() === "v") {
+      const api = e.api;
+      const cell = api.getFocusedCell();
+      if (!cell) return;
+
+      try {
+        // 1. Read block data from system clipboard
+        const text = await navigator.clipboard.readText();
+        if (!text) return;
+
+        // 2. Parse clipboard text into a 2D grid (rows split by newline, columns by tab)
+        const clipboardRows = text.split(/\r?\n/).map(row => row.split("\t"));
+        
+        // 3. Get currently displayed columns to determine visual column order
+        const columns = (api.getColumns ? api.getColumns() : api.getAllGridColumns ? api.getAllGridColumns() : []) || [];
+        const focusedColIndex = columns.indexOf(cell.column);
+
+        if (focusedColIndex === -1) return;
+
+        // 4. Distribute parsed grid data downward and rightward starting from the selected cell
+        clipboardRows.forEach((rowValues, rowIndexOffset) => {
+          // If the last clipboard row is empty (common on copy), skip it
+          if (rowIndexOffset === clipboardRows.length - 1 && rowValues.length === 1 && !rowValues[0]) {
+            return;
+          }
+
+          const targetRowIndex = cell.rowIndex + rowIndexOffset;
+          const rowNode = api.getDisplayedRowAtIndex(targetRowIndex);
+          if (!rowNode) return;
+
+          rowValues.forEach((cellValue, colIndexOffset) => {
+            const targetColIndex = focusedColIndex + colIndexOffset;
+            if (targetColIndex >= columns.length) return; // Stay within grid bounds
+
+            const targetCol = columns[targetColIndex];
+            
+            // Skip non-editable columns
+            if (!targetCol.isCellEditable(rowNode)) return;
+
+            const colId = targetCol.getId();
+            const oldValue = rowNode.data[colId];
+            
+            // Clean/normalize string values
+            const cleanNewValue = String(cellValue).trim();
+            const cleanOldValue = oldValue === undefined || oldValue === null ? "" : String(oldValue).trim();
+
+            if (cleanOldValue !== cleanNewValue) {
+              rowNode.setDataValue(colId, cleanNewValue); // Updates local grid and fires onCellValueChanged
+            }
+          });
+        });
+      } catch (err) {
+        console.error("Failed to paste spreadsheet range from clipboard:", err);
+      }
+    }
+  };
+        const columnDefs = (spreadsheet.columns ?? []).map((column) => {
+        const isSrNo = column.toLowerCase() === "sr no" || column.toLowerCase() === "sr. no" || column.toLowerCase() === "sr.no.";
         return {
             field: column,
             headerName: column,
-            // Override AG Grid deep dot notation to read properties flatly
             valueGetter: (params) => params.data ? params.data[column] : null,
             valueSetter: (params) => {
                 if (params.data) {
@@ -162,6 +242,7 @@ const [activeSheet, setActiveSheet] = useState(0);
     suppressClipboardPaste={false}
     copyHeadersToClipboard={false}
     onCellClicked={onCellClicked}
+    onCellKeyDown={onCellKeyDown}
     rowData={spreadsheet.filteredRows}
 getRowId={(params) => params.data.__id}
     columnDefs={columnDefs}
