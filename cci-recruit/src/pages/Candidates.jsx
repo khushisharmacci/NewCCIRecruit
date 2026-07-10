@@ -78,15 +78,13 @@ export default function Candidates() {
         ? JSON.parse(file.rows_data || "[]")
         : file.rows_data || [];
 
-    const aliases = {
-      row_order: ["SR.NO.", "SR NO", "SR. NO", "S.NO.", "S. NO", "S NO", "Serial Number"],
-      full_name: ["Name", "Candidate Name", "Full Name", "Candidate", "Candidate Full Name"],
+        const aliases = {
+      full_name: ["Name", "Candidate Name", "Full Name"],
       email: ["Email", "Email ID", "Email Address"],
       phone: ["Phone", "Contact Number", "Mobile", "Mobile Number"],
       current_company: ["Company", "Current Company", "Current Org"],
       position: ["Position", "Position Title", "Job Title"],
-      notes: ["Notes"],
-      remarks: ["Remarks By Sir", "Remarks"],
+      notes: ["Remarks", "Notes"],
       status: ["Status"],
       experience_years: [
         "Experience",
@@ -94,17 +92,13 @@ export default function Candidates() {
         "Years of Experience",
       ],
       location: ["Location"],
-      current_job_role: ["Current Role", "Designation", "Current Designation"],
+      sourced_by: ["Sourced By", "Sourced_by", "Sourcedby"],
+      current_ctc: ["Current Fixed CTC", "Current CTC", "Fixed CTC", "CTC"],
       expected_ctc: ["Expected CTC", "Expected Salary"],
-      linkedin: ["Linkedin", "Linkedin Profile Link", "Linkedin Link"],
       academics: ["Academics", "Education", "Qualification"],
-      current_ctc: ["Current Fixed CTC", "Current CTC", "Fixed CTC"],
-      sourced_by: ["Sourced By", "Sourced_By"],
-      hr: ["HR", "HR Name"],
-      sent_on: ["Sent On", "Sent_On"],
-      updated_by: ["Updated By", "Updated_By"],
-      spoken_by: ["Spoken By", "Spoken_By"],
-      candidate_date: ["Candidate Date", "Candidate_Date"],
+      linkedin: ["LinkedIn", "LinkedIn Profile Link", "LinkedIn Link"],
+      sent_on: ["Sent On", "Submission Date", "Date Sent"],
+      hr: ["HR", "HR Name", "HR Recruiter"],
     };
 
     const emailCol = file.columns.find((col) =>
@@ -128,29 +122,24 @@ export default function Candidates() {
     });
 
     const row = {};
-    const values = {
-      row_order: candidate.row_order,
+        const values = {
       full_name: candidate.full_name,
       email: candidate.email,
       phone: candidate.phone,
       current_company: candidate.current_company,
       position: candidate.position,
       notes: candidate.notes,
-      remarks: candidate.remarks,
       status: candidate.status,
       experience_years: candidate.experience_years,
       location: candidate.location,
-      current_job_role: candidate.current_job_role,
-      expected_ctc: candidate.expected_ctc,
-      linkedin: candidate.linkedin,
-      academics: candidate.academics,
-      current_ctc: candidate.current_ctc,
-      sourced_by: candidate.sourced_by,
-      hr: candidate.hr,
-      sent_on: candidate.sent_on,
-      updated_by: candidate.updated_by,
-      spoken_by: candidate.spoken_by,
       candidate_date: candidate.candidate_date,
+      sourced_by: candidate.sourced_by,
+      current_ctc: candidate.current_ctc,
+      expected_ctc: candidate.expected_ctc,
+      academics: candidate.academics,
+      linkedin: candidate.linkedin,
+      sent_on: candidate.sent_on,
+      hr: candidate.hr,
     };
 
     file.columns.forEach((column) => {

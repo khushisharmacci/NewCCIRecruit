@@ -1,9 +1,9 @@
+import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/tenant";
 import { mapHeaderToField } from "@/lib/syncService";
-import { toast } from "sonner";
 
 export default function useSpreadsheet(fileId) {
   const queryClient = useQueryClient();
@@ -311,11 +311,11 @@ export default function useSpreadsheet(fileId) {
 
       const columns = file.columns || [];
 
-      const aliases = {
-        full_name: ["Name", "Candidate Name", "Full Name", "Candidate", "Candidate Full Name"],
+            const aliases = {
+        full_name: ["Name", "Candidate Name", "Full Name"],
         email: ["Email", "Email ID", "Email Address"],
         phone: ["Phone", "Contact Number", "Mobile", "Mobile Number"],
-        current_company: ["Company", "Current Company", "Current Org", "Current Organisation"],
+        current_company: ["Company", "Current Company", "Current Org"],
         position: ["Position", "Position Title", "Job Title"],
         notes: ["Remarks", "Notes"],
         status: ["Status"],
@@ -325,18 +325,13 @@ export default function useSpreadsheet(fileId) {
           "Years of Experience",
         ],
         location: ["Location"],
-        current_job_role: ["Current Role", "Designation", "Current Designation"],
+        sourced_by: ["Sourced By", "Sourced_by", "Sourcedby"],
+        current_ctc: ["Current Fixed CTC", "Current CTC", "Fixed CTC", "CTC"],
         expected_ctc: ["Expected CTC", "Expected Salary"],
-        linkedin: ["Linkedin", "Linkedin Profile Link", "Linkedin Link"],
         academics: ["Academics", "Education", "Qualification"],
-        current_ctc: ["Current Fixed CTC", "Current CTC", "Fixed CTC"],
-        sourced_by: ["Sourced By", "Sourced_By"],
-        hr: ["HR", "HR Name"],
-        sent_on: ["Sent On", "Sent_On"],
-        updated_by: ["Updated By", "Updated_By"],
-        spoken_by: ["Spoken By", "Spoken_By"],
-        candidate_date: ["Candidate Date", "Candidate_Date"],
-        row_order: ["sr no", "sr. no", "sr.no.", "sr.no", "serial number", "s.no.", "s.no", "sno"],
+        linkedin: ["LinkedIn", "LinkedIn Profile Link", "LinkedIn Link"],
+        sent_on: ["Sent On", "Submission Date", "Date Sent"],
+        hr: ["HR", "HR Name", "HR Recruiter"],
       };
 
       // Find the mapped column headers
@@ -378,18 +373,31 @@ export default function useSpreadsheet(fileId) {
 
                   Object.entries(mappings).forEach(([col, field]) => {
           const val = row[col];
-          if (val !== undefined && val !== null && val !== "") {
-            if (field === "experience_years" || field === "expected_ctc" || field === "row_order") {
-              const num = parseFloat(String(val).replace(/[^0-9.]/g, ""));
-              candidateData[field] = isNaN(num) ? null : num;
-            } else if (field === "sent_on") {
-              // Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD for PostgreSQL
-              const str = String(val).trim();
-              if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(str)) {
-                const [day, month, year] = str.split(/[-/]/);
-                candidateData[field] = `${year}-${month}-${day}`;
+          if (val !== undefined && val !== null) {
+            const strVal = String(val).trim();
+            
+            // If the cell contains only whitespace, treat it as empty/null
+            if (strVal === "") {
+              if (field === "experience_years" || field === "expected_ctc" || field === "row_order" || field === "sent_on" || field === "candidate_date") {
+                candidateData[field] = null;
               } else {
-                candidateData[field] = val;
+                candidateData[field] = "";
+              }
+              return;
+            }
+
+            if (field === "experience_years" || field === "expected_ctc" || field === "row_order") {
+              const num = parseFloat(strVal.replace(/[^0-9.]/g, ""));
+              candidateData[field] = isNaN(num) ? null : num;
+            } else if (field === "sent_on" || field === "candidate_date") {
+              // Normalize date inputs and handle invalid formats cleanly
+              if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(strVal)) {
+                const [day, month, year] = strVal.split(/[-/]/);
+                candidateData[field] = `${year}-${month}-${day}`;
+              } else if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
+                candidateData[field] = strVal;
+              } else {
+                candidateData[field] = null; // Set invalid formats to null instead of crashing
               }
             } else {
               candidateData[field] = val;

@@ -413,10 +413,12 @@ const handleImport = async () => {
 
           Object.entries(mappings).forEach(([header, field]) => {
             if (!field) return;
-            if (row[header] === undefined) return;
-            if (row[header] === "") return;
-
+            if (row[header] === undefined || row[header] === null) return;
+            
             const value = row[header];
+            const strVal = String(value).trim();
+            if (strVal === "") return; // Skip empty and whitespace values completely
+
             let converted = value;
 
             if (NUMERIC_FIELDS.includes(field)) {
@@ -425,11 +427,12 @@ const handleImport = async () => {
             }
 
             // Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD
-            if (field === "sent_on" && value) {
-              const str = String(value).trim();
-              if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(str)) {
-                const [day, month, year] = str.split(/[-/]/);
+            if ((field === "sent_on" || field === "candidate_date") && value) {
+              if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(strVal)) {
+                const [day, month, year] = strVal.split(/[-/]/);
                 converted = `${year}-${month}-${day}`;
+              } else if (!/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
+                converted = null; // Set to null for invalid date formats to prevent DB exceptions
               }
             }
 

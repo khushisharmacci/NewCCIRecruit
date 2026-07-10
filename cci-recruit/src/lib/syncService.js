@@ -118,25 +118,39 @@ export async function findDuplicateCandidate(name, phone, email) {
 } 
 
 // ─── Spreadsheet Row ↔ Candidate Sync ───────────────────────────────────────
-/**
- * Create or update a candidate from a spreadsheet row.
- * Uses duplicate detection to avoid duplicates.
- * Links the candidate to the spreadsheet via spreadsheet_id and spreadsheet_row_id.
- * Also updates the row with _candidate_id.
- *
- * @returns { candidate, row } - the created/updated candidate and the updated row
- */
+
 export async function syncRowToCandidate(row, dataFile, tenantFilter, stampRecord) {
-  const columns = JSON.parse(dataFile.columns || "[]");
+  const columns = typeof dataFile.columns === "string" ? JSON.parse(dataFile.columns || "[]") : (dataFile.columns || []);
   const mappings = autoDetectMappings(columns);
 
   const candidateData = {};
   Object.entries(mappings).forEach(([header, field]) => {
     const val = row[header];
-    if (val !== undefined && val !== "") {
-      if (field === "experience_years" || field === "expected_salary") {
-        const num = parseFloat(val);
+    if (val !== undefined && val !== null) {
+      const strVal = String(val).trim();
+      
+      // Filter out whitespace-only strings
+      if (strVal === "") {
+        if (field === "experience_years" || field === "expected_ctc" || field === "row_order" || field === "sent_on" || field === "candidate_date") {
+          candidateData[field] = null;
+        } else {
+          candidateData[field] = "";
+        }
+        return;
+      }
+
+      if (field === "experience_years" || field === "expected_ctc" || field === "row_order") {
+        const num = parseFloat(strVal.replace(/[^0-9.]/g, ""));
         if (!isNaN(num)) candidateData[field] = num;
+      } else if (field === "sent_on" || field === "candidate_date") {
+        if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(strVal)) {
+          const [day, month, year] = strVal.split(/[-/]/);
+          candidateData[field] = `${year}-${month}-${day}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
+          candidateData[field] = strVal;
+        } else {
+          candidateData[field] = null;
+        }
       } else {
         candidateData[field] = val;
       }
@@ -160,21 +174,41 @@ export async function syncRowToCandidate(row, dataFile, tenantFilter, stampRecor
   const rowId = row._row_id || generateRowId();
 
   if (existing) {
-    // Update existing candidate with spreadsheet data + linking
-    const updated = await base44.entities.Candidate.update(existing.id, {
-      ...candidateData,
-      spreadsheet_id: dataFile.id,
-      spreadsheet_row_id: rowId,
-    });
+    // Update existing candidate
+    const { data: updated, error } = await supabase
+      .from("candidates")
+      .update({
+        ...candidateData,
+        data_file_id: dataFile.id,
+        spreadsheet_id: dataFile.id,
+        spreadsheet_row_id: rowId,
+      })
+      .eq("id", existing.id)
+      .select()
+      .single();
+
+    if (error) throw error;
     return { candidate: updated, row: { ...row, _row_id: rowId, _candidate_id: updated.id } };
   }
 
   // Create new candidate
-  const newCandidate = await base44.entities.Candidate.create(stampRecord({
-    ...candidateData,
-    spreadsheet_id: dataFile.id,
-    spreadsheet_row_id: rowId,
-  }));
+  const { data: newCandidate, error } = await supabase
+    .from("candidates")
+    .insert([stampRecord ? stampRecord({
+      ...candidateData,
+      data_file_id: dataFile.id,
+      spreadsheet_id: dataFile.id,
+      spreadsheet_row_id: rowId,
+    }) : {
+      ...candidateData,
+      data_file_id: dataFile.id,
+      spreadsheet_id: dataFile.id,
+      spreadsheet_row_id: rowId,
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
   return { candidate: newCandidate, row: { ...row, _row_id: rowId, _candidate_id: newCandidate.id } };
 }
 
