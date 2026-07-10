@@ -37,7 +37,8 @@ export default function PositionNode({ node, client, children, allNodes, onAdd, 
     navigate("/recruiter-iq", {
       state: {
         positionTitle: node.title,
-        clientName: client?.name || ""
+        clientName: client?.name || "",
+        fromPositions: true // Add this flag
       }
     });
   };

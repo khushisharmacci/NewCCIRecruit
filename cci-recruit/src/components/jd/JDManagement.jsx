@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "react-router-dom";
+import { useLocation, Link, useNavigate } from "react-router-dom"; 
 import { supabase } from "@/lib/supabase";
 import { useTenant } from "@/lib/tenant";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { FileText, Upload, Plus, Trash2, Eye, ArrowLeft, Users, Loader2, Pencil 
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import ReactMarkdown from "react-markdown";
+import CandidateDialog from "@/components/CandidateDialog"; // Mapped CandidateDialog here
 
 function JDCard({ jd, onOpen, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false);
@@ -65,25 +66,73 @@ function JDCard({ jd, onOpen, onEdit, onDelete }) {
   );
 }
 
-function JDDetail({ jd, onEdit, onBack }) {
+function JDDetail({ jd, onEdit, onBack, fromPositions }) { // Added fromPositions prop
   const { tenantFilter } = useTenant();
+  const queryClient = useQueryClient();
+  const [editCandidate, setEditCandidate] = useState(null);
+  const [candidateDialogOpen, setCandidateDialogOpen] = useState(false);
+
+  // Mutation to edit candidate details directly from this page
+  const updateCandidateMutation = useMutation({
+    mutationFn: async (data) => {
+      const { error } = await supabase
+        .from("candidates")
+        .update(data)
+        .eq("id", editCandidate.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jd-connected-candidates", jd.id] });
+      setCandidateDialogOpen(false);
+      setEditCandidate(null);
+    },
+  });
+
   const { data: candidates = [], isLoading } = useQuery({
     queryKey: ["jd-connected-candidates", jd.id],
     queryFn: async () => {
-      let query = supabase
-        .from("candidates")
-        .select("*")
-        .eq("position", jd.title);
+      // 1. Fetch spreadsheets to fuzzy-match by name
+      const { data: files } = await supabase
+        .from("data_files")
+        .select("id, name");
 
-      const filters = tenantFilter();
-
-      if (filters.company_id) {
-        query = query.eq("company_id", filters.company_id);
+      let fileId = null;
+      if (files) {
+        const norm = (str) => String(str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const normTitle = norm(jd.title);
+        const match = files.find(file => {
+          const normFileName = norm(file.name);
+          return normFileName.includes(normTitle) || normTitle.includes(normFileName);
+        });
+        if (match) {
+          fileId = match.id;
+        }
       }
 
-      const { data, error } = await query.order("created_at", { ascending: false });
-      if (error) throw error;
-      return data || [];
+      // 2. Fetch candidates matching either this position name OR synced from that spreadsheet
+      let q1 = supabase.from("candidates").select("*").eq("position", jd.title);
+      let q2 = fileId ? supabase.from("candidates").select("*").eq("data_file_id", fileId) : null;
+
+      const filters = tenantFilter();
+      if (filters.company_id) {
+        q1 = q1.eq("company_id", filters.company_id);
+        if (q2) q2 = q2.eq("company_id", filters.company_id);
+      }
+
+      const [resByPosition, resByFile] = await Promise.all([
+        q1.order("created_at", { ascending: false }),
+        q2 ? q2.order("created_at", { ascending: false }) : Promise.resolve({ data: [] })
+      ]);
+
+      const combined = [...(resByPosition.data || []), ...(resByFile.data || [])];
+      
+      // De-duplicate by candidate ID
+      const unique = combined.filter((c, index, self) =>
+        self.findIndex((t) => t.id === c.id) === index
+      );
+
+      unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      return unique;
     },
   });
 
@@ -106,14 +155,13 @@ function JDDetail({ jd, onEdit, onBack }) {
     },
   });
 
-  const connectedCandidates = candidates.filter((c) =>
-    submissions.some((s) => s.candidate_id === c.id && (!jd.client_name || s.client_name === jd.client_name))
-  );
+  // Show all candidates matching the position from the spreadsheet
+  const connectedCandidates = candidates;
 
   return (
     <div className="space-y-6">
       <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Back to Job Descriptions
+        <ArrowLeft className="h-4 w-4" /> {fromPositions ? "Back to Positions" : "Back to Job Descriptions"}
       </button>
 
       <div className="bg-card rounded-xl border border-border p-6 space-y-4">
@@ -151,33 +199,74 @@ function JDDetail({ jd, onEdit, onBack }) {
         ) : connectedCandidates.length === 0 ? (
           <p className="text-muted-foreground text-sm text-center py-6">No candidates connected to this JD yet</p>
         ) : (
-          <div className="space-y-3">
+                    <div className="space-y-3">
             {connectedCandidates.map((c) => {
               const submission = submissions.find((s) => s.candidate_id === c.id);
               return (
-                <div key={c.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                <div key={c.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors">
+                  {/* Left Avatar Icon */}
                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
                     {c.full_name?.charAt(0) || "?"}
                   </div>
+                  
+                  {/* Candidate Name & Contact Details */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">{c.full_name}</p>
-                    {submission && (
-                      <p className="text-xs text-muted-foreground">Sent to {submission.client_name} on {submission.date_sent ? format(new Date(submission.date_sent), "MMM d, yyyy") : "—"}</p>
+                    {submission ? (
+                      <p className="text-xs text-muted-foreground">
+                        Sent to {submission.client_name} on {submission.date_sent ? format(new Date(submission.date_sent), "MMM d, yyyy") : "—"}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {c.email || "No email"} | {c.phone || "No phone"}
+                      </p>
                     )}
                   </div>
-                  {submission && (
-                    <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full",
-                      submission.status === "Selected" ? "bg-emerald-500/15 text-emerald-300" :
-                      submission.status === "Rejected" ? "bg-red-500/15 text-red-300" :
-                      "bg-amber-500/15 text-amber-300"
-                    )}>{submission.status}</span>
-                  )}
+                  
+                  {/* Actions Column (Status Badge, View Eye Button, Edit Pencil Button) */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {submission && (
+                      <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full mr-2",
+                        submission.status === "Selected" ? "bg-emerald-500/15 text-emerald-300" :
+                        submission.status === "Rejected" ? "bg-red-500/15 text-red-300" :
+                        "bg-amber-500/15 text-amber-300"
+                      )}>{submission.status}</span>
+                    )}
+
+                    {/* View Details Eye Icon Button */}
+                    <Link to={`/candidates/${c.id}`} state={{ fromJD: jd }}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </Link>
+
+                    {/* Edit Details Pencil Icon Button */}
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        setEditCandidate(c);
+                        setCandidateDialogOpen(true);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Edit candidate dialog wrapper */}
+      <CandidateDialog
+        open={candidateDialogOpen}
+        onOpenChange={setCandidateDialogOpen}
+        candidate={editCandidate}
+        onSave={(data) => updateCandidateMutation.mutate(data)}
+      />
     </div>
   );
 }
@@ -185,6 +274,7 @@ function JDDetail({ jd, onEdit, onBack }) {
 export default function JDManagement() {
   const queryClient = useQueryClient();
   const location = useLocation();
+  const navigate = useNavigate();
   const { tenantFilter, stampRecord } = useTenant();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -344,10 +434,15 @@ export default function JDManagement() {
         <JDDetail
           jd={selectedJD}
           onEdit={() => startEdit(selectedJD)}
+          fromPositions={!!location.state?.fromPositions}
           onBack={() => {
-            setSelectedJD(null);
-            if (searchState) {
-              setClearedSearch(true);
+            if (location.state?.fromPositions) {
+              navigate("/positions");
+            } else {
+              setSelectedJD(null);
+              if (searchState) {
+                setClearedSearch(true);
+              }
             }
           }}
         />
@@ -388,8 +483,18 @@ export default function JDManagement() {
                 </p>
               </div>
               <div className="flex justify-center gap-3 pt-2">
-                <Button variant="outline" size="sm" onClick={() => setClearedSearch(true)}>
-                  View All JDs
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    if (location.state?.fromPositions) {
+                      navigate("/positions");
+                    } else {
+                      setClearedSearch(true);
+                    }
+                  }}
+                >
+                  {location.state?.fromPositions ? "Back to Positions" : "View All JDs"}
                 </Button>
                 <Button
                   size="sm"

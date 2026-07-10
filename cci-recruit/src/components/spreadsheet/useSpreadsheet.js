@@ -311,7 +311,7 @@ export default function useSpreadsheet(fileId) {
 
       const columns = file.columns || [];
 
-            const aliases = {
+        const aliases = {
         full_name: ["Name", "Candidate Name", "Full Name"],
         email: ["Email", "Email ID", "Email Address"],
         phone: ["Phone", "Contact Number", "Mobile", "Mobile Number"],
@@ -324,7 +324,7 @@ export default function useSpreadsheet(fileId) {
           "Experience (Yrs)",
           "Years of Experience",
         ],
-        location: ["Location"],
+        location: ["Location", "Position Location"],
         sourced_by: ["Sourced By", "Sourced_by", "Sourcedby"],
         current_ctc: ["Current Fixed CTC", "Current CTC", "Fixed CTC", "CTC"],
         expected_ctc: ["Expected CTC", "Expected Salary"],

@@ -1,4 +1,4 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import {
@@ -22,6 +22,8 @@ const statusColors = {
 
 export default function CandidateDetail() {
   const { candidateId } = useParams();
+  const location = useLocation(); 
+  const fromJD = location.state?.fromJD; 
   const queryClient = useQueryClient();
   const { data: candidate, isLoading } = useQuery({
     queryKey: ["candidate", candidateId],
@@ -59,13 +61,24 @@ export default function CandidateDetail() {
 
   return (
   <div className="p-4 md:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
-    <Link
-      to="/candidates"
-      className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-    >
-      <ArrowLeft className="h-4 w-4" />
-      Back to Candidates
-    </Link>
+    {fromJD ? (
+      <Link
+        to="/recruiter-iq"
+        state={{ positionTitle: fromJD.title, clientName: fromJD.client_name }}
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to JD ({fromJD.title})
+      </Link>
+    ) : (
+      <Link
+        to="/candidates"
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Candidates
+      </Link>
+    )}
 
     <div className="bg-card rounded-xl border border-border p-6">
       <div className="flex flex-col sm:flex-row items-start gap-4">
