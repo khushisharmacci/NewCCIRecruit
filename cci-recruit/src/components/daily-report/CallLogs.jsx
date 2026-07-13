@@ -228,6 +228,11 @@ const filteredPositions = selectedCompany
         <h3 className="flex items-center gap-2 font-semibold">
           <Phone className="h-5 w-5 text-primary" />
           Call Logs
+          {callLogs.length > 0 && (
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white animate-in zoom-in-50 duration-200">
+              {callLogs.length}
+            </span>
+          )}
         </h3>
 
         {!readOnly && editing === -1 && (
