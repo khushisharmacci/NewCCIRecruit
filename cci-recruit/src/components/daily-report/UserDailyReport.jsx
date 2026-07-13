@@ -168,25 +168,36 @@ setExistingReport(newReport);
 
       }
       if (callLogs.length > 0) {
+        // Fetch all active candidate IDs to prevent foreign key crashes from deleted candidates
+        const { data: dbCandidates } = await supabase
+          .from("candidates")
+          .select("id");
 
-const logs = callLogs.map(log => ({
-  report_id: reportId,
-  company_id: companyId,
+        const activeCandidateIds = new Set((dbCandidates || []).map((c) => c.id));
 
-  person_name: log.person_name,
-  phone_number: log.phone_number,
+        const logs = callLogs.map((log) => ({
+          report_id: reportId,
+          company_id: companyId,
 
-  spreadsheet_id: log.spreadsheet_id || null,
-  company_name: log.company_name || null,
-  position_title: log.position_title || null,
+          person_name: log.person_name,
+          phone_number: log.phone_number,
 
-  discussion_notes: log.discussion_notes,
+          spreadsheet_id: log.spreadsheet_id || null,
+          company_name: log.company_name || null,
+          position_title: log.position_title || null,
 
-  candidate_id: log.candidate_id || null,
-}));
-console.log("LOGS TO SAVE", logs);
-const { error } = await supabase
-.from("daily_report_call_logs")
+          discussion_notes: log.discussion_notes,
+
+          // Verify ID exists, otherwise gracefully set to null
+          candidate_id:
+            log.candidate_id && activeCandidateIds.has(log.candidate_id)
+              ? log.candidate_id
+              : null,
+        }));
+
+        console.log("LOGS TO SAVE", logs);
+        const { error } = await supabase
+          .from("daily_report_call_logs")
 .insert(logs);
 
 if (error) throw error;

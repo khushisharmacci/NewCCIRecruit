@@ -62,12 +62,19 @@ console.log("MERGED USER", mergedUser);
 
     initializeAuth();
 
-    const {
+        const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         console.log("AUTH EVENT", _event);
-    console.log("SESSION", session);
+        console.log("SESSION", session);
+        
+        // Intercept password reset link clicks and redirect to the reset form
+        if (_event === "PASSWORD_RECOVERY") {
+          window.location.href = "/reset-password";
+          return;
+        }
+
         await loadProfile(session?.user);
       }
     );
