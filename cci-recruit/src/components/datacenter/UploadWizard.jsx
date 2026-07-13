@@ -329,14 +329,11 @@ const handleImport = async () => {
     const rowsToProcess = [];
     const seenKeys = new Set();
 
-    allRows.forEach((row) => {
+        allRows.forEach((row) => {
       // Find the primary name identifier for this entity (e.g. "full_name" for Candidate)
       const nameField = entityDef.required[0];
       const nameHeader = Object.keys(mappings).find(k => mappings[k] === nameField);
       const nameVal = nameHeader ? String(row[nameHeader] || "").trim() : "";
-
-      // Skip empty rows (no primary name/title)
-      if (!nameVal) return;
 
       if (entity === "Candidate") {
         const emailHeader = Object.keys(mappings).find(k => mappings[k] === "email");
@@ -344,6 +341,9 @@ const handleImport = async () => {
 
         const emailVal = emailHeader ? String(row[emailHeader] || "").trim().toLowerCase() : "";
         const phoneVal = phoneHeader ? String(row[phoneHeader] || "").trim() : "";
+
+        // Skip completely empty rows (no name, email, or phone)
+        if (!nameVal && !emailVal && !phoneVal) return;
 
         // Build uniqueness keys
         const emailKey = emailVal && !emailVal.includes("placeholder.local") ? `email:${emailVal}` : "";
@@ -362,7 +362,9 @@ const handleImport = async () => {
           if (nameKey) seenKeys.add(nameKey);
         }
       } else {
-        // General de-duplication by name/title for other entities
+        // Skip empty rows for other entities
+        if (!nameVal) return;
+
         const key = `${nameField}:${nameVal.toLowerCase()}`;
         if (!seenKeys.has(key)) {
           rowsToProcess.push(row);
@@ -469,6 +471,11 @@ const handleImport = async () => {
           let insertedId = null;
 
           if (hasPrimaryId) {
+            // Trim values to ensure duplicate check matches accurately
+            if (record.email) record.email = String(record.email).trim();
+            if (record.phone) record.phone = String(record.phone).trim();
+            if (record.full_name) record.full_name = String(record.full_name).trim();
+
             // Fallback for missing emails (prevents database NOT NULL failures)
             if (entity === "Candidate" && !record.email) {
               record.email = `noemail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@placeholder.local`;

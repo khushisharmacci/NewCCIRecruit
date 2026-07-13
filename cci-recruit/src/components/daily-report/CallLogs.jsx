@@ -60,18 +60,23 @@ export default function CallLogs({
     enabled: !!companyId,
   });
 
-  // 2. Fetch Candidates list for suggestions lookup
+  // 2. Fetch Candidates dynamically based on search input (fixes the 1000 row cap and resolves lag)
   const { data: candidates = [] } = useQuery({
-    queryKey: ["candidates-suggestions", companyId],
+    queryKey: ["candidates-suggestions", companyId, nameSearch],
     queryFn: async () => {
+      const trimmed = nameSearch.trim();
+      if (!trimmed) return [];
+
       const { data, error } = await supabase
         .from("candidates")
-        .select("id, full_name, phone, email, position, data_file_id");
+        .select("id, full_name, phone, email, position, data_file_id")
+        .ilike("full_name", `%${trimmed}%`)
+        .limit(20);
 
       if (error) throw error;
       return data || [];
     },
-    enabled: !!companyId,
+    enabled: !!companyId && nameSearch.trim().length > 0,
   });
 
   
@@ -107,11 +112,8 @@ export default function CallLogs({
 });
 
   // ─── Suggestions Filtering ──────────────────────────────────────────────
-  const filteredCandidates = nameSearch.trim()
-    ? candidates.filter((c) =>
-        c.full_name?.toLowerCase().includes(nameSearch.toLowerCase())
-      )
-    : [];
+  // The database already returns pre-filtered candidates matching your search input
+  const filteredCandidates = candidates;
 
   const selectedCompany = companies.find((c) => c.id === form.company_id);
 

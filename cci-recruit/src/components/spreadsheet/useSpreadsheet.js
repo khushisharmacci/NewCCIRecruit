@@ -373,38 +373,32 @@ export default function useSpreadsheet(fileId) {
 
                   Object.entries(mappings).forEach(([col, field]) => {
           const val = row[col];
-          if (val !== undefined && val !== null) {
-            const strVal = String(val).trim();
-            
-            // If the cell contains only whitespace, treat it as empty/null
-            if (strVal === "") {
-              if (field === "experience_years" || field === "expected_ctc" || field === "row_order" || field === "sent_on" || field === "candidate_date") {
-                candidateData[field] = null;
-              } else {
-                candidateData[field] = "";
-              }
-              return;
-            }
-
+          if (val !== undefined && val !== null && val !== "") {
             if (field === "experience_years" || field === "expected_ctc" || field === "row_order") {
-              const num = parseFloat(strVal.replace(/[^0-9.]/g, ""));
+              const num = parseFloat(String(val).replace(/[^0-9.]/g, ""));
               candidateData[field] = isNaN(num) ? null : num;
-            } else if (field === "sent_on" || field === "candidate_date") {
-              // Normalize date inputs and handle invalid formats cleanly
-              if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(strVal)) {
-                const [day, month, year] = strVal.split(/[-/]/);
+            } else if (field === "sent_on") {
+              const str = String(val).trim();
+              if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(str)) {
+                const [day, month, year] = str.split(/[-/]/);
                 candidateData[field] = `${year}-${month}-${day}`;
-              } else if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
-                candidateData[field] = strVal;
               } else {
-                candidateData[field] = null; // Set invalid formats to null instead of crashing
+                candidateData[field] = val;
               }
             } else {
-              candidateData[field] = val;
+              // Trim all strings to prevent spacing duplication issues
+              candidateData[field] = typeof val === "string" ? val.trim() : val;
             }
           }
         });
 
+        // Ensure we ignore empty candidate rows
+        const checkName = candidateData.full_name ? String(candidateData.full_name).trim() : "";
+        const checkEmail = candidateData.email ? String(candidateData.email).trim() : "";
+        const checkPhone = candidateData.phone ? String(candidateData.phone).trim() : "";
+
+        if (!checkName && !checkEmail && !checkPhone) continue;
+        if (!checkName) continue; // Candidate must have a name to be synchronized
         // Ensure required fields
         if (!candidateData.full_name) continue;
 
@@ -417,12 +411,14 @@ export default function useSpreadsheet(fileId) {
 
         // Search by email or phone if not linked by ID yet
         if (!existingCandidate && candidateData.email && !candidateData.email.includes("placeholder.local")) {
-          existingCandidate = dbCandidates?.find((c) => c.email?.toLowerCase() === candidateData.email.toLowerCase()) || null;
+          const cleanEmail = candidateData.email.trim().toLowerCase();
+          existingCandidate = dbCandidates?.find((c) => c.email?.trim().toLowerCase() === cleanEmail) || null;
           if (existingCandidate) isNewLink = true;
         }
 
         if (!existingCandidate && candidateData.phone) {
-          existingCandidate = dbCandidates?.find((c) => String(c.phone) === String(candidateData.phone)) || null;
+          const cleanPhone = candidateData.phone.trim();
+          existingCandidate = dbCandidates?.find((c) => String(c.phone).trim() === cleanPhone) || null;
           if (existingCandidate) isNewLink = true;
         }
 

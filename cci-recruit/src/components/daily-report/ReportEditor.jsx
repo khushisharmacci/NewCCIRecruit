@@ -15,7 +15,6 @@ import AttachmentUploader from "./AttachmentUploader";
 import CallLogs from "./CallLogs";
 
 export default function ReportEditor({
-  candidates,
   clients,
   positions,
   selectedDate,
@@ -140,7 +139,6 @@ Plans for Tomorrow:`}
       <CallLogs
       callLogs={callLogs}
       setCallLogs={setCallLogs}
-      candidates={candidates}
       clients={clients}
       positions={positions}
       readOnly={readOnly}

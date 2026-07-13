@@ -37,18 +37,7 @@ export default function UserDailyReport() {
   },
 });
 
-const { data: candidates = [] } = useQuery({
-  queryKey: ["daily-report-candidates"],
-  enabled: !!user,
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from("candidates")
-      .select("*");
 
-    if (error) throw error;
-    return data || [];
-  },
-});
 
 const { data: clients = [] } = useQuery({
   queryKey: ["daily-report-clients"],
@@ -273,7 +262,6 @@ if (error) throw error;
   callLogs={callLogs}
   setCallLogs={setCallLogs}
 
-  candidates={candidates}
   clients={clients}
   positions={positions}
   files={files}   // ✅ Add this
