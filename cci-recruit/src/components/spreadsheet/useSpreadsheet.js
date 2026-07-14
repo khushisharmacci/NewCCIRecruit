@@ -136,7 +136,7 @@ export default function useSpreadsheet(fileId) {
         if (error) console.error(error);
     }
 
-        async function updateCell(rowId, columnName, value) {
+          async function updateCell(rowId, columnName, value) {
     const updated = rows.map((row) =>
         row.__id === rowId
             ? {
@@ -156,42 +156,56 @@ export default function useSpreadsheet(fileId) {
         // Find if this row is linked to a candidate
         if (row && row._candidate_id) {
             const field = mapHeaderToField(columnName);
-            if (field) {
-                // If they erase the name (or candidate name becomes empty)
-                if (field === "full_name" && (!value || String(value).trim() === "")) {
-                    // Delete linked records first to prevent foreign key errors
-                    await supabase
-                        .from("client_submissions")
-                        .delete()
-                        .eq("candidate_id", row._candidate_id);
+            
+            // If they erase the name (or candidate name becomes empty), delete candidate
+            if (field === "full_name" && (!value || String(value).trim() === "")) {
+                // Delete linked records first to prevent foreign key errors
+                await supabase
+                    .from("client_submissions")
+                    .delete()
+                    .eq("candidate_id", row._candidate_id);
 
-                    await supabase
-                        .from("interviews")
-                        .delete()
-                        .eq("candidate_id", row._candidate_id);
+                await supabase
+                    .from("interviews")
+                    .delete()
+                    .eq("candidate_id", row._candidate_id);
 
-                    // Delete candidate record
-                    await supabase
-                        .from("candidates")
-                        .delete()
-                        .eq("id", row._candidate_id);
+                // Delete candidate record
+                await supabase
+                    .from("candidates")
+                    .delete()
+                    .eq("id", row._candidate_id);
+                
+                // Remove candidate link from the row
+                row._candidate_id = null;
+            } else {
+                // Otherwise, build update payload from the ENTIRE row data
+                const candidateUpdate = {};
+                
+                Object.entries(row).forEach(([colName, colVal]) => {
+                    // Ignore internal row properties
+                    if (["__id", "_candidate_id", "_row_id", "spreadsheet_id"].includes(colName)) return;
                     
-                    // Remove candidate link from the row
-                    row._candidate_id = null;
-                } else {
-                    let cleanedValue = value;
-                    if (field === "experience_years" || field === "expected_salary") {
-                        const cleaned = String(value).replace(/[^0-9.]/g, "");
-                        const num = parseFloat(cleaned);
-                        cleanedValue = isNaN(num) ? null : num;
+                    const f = mapHeaderToField(colName);
+                    if (f && colVal !== undefined && colVal !== null) {
+                        let cleanedVal = colVal;
+                        if (["experience_years", "expected_ctc", "current_ctc", "expected_salary"].includes(f)) {
+                            const cleaned = String(colVal).replace(/[^0-9.]/g, "");
+                            const num = parseFloat(cleaned);
+                            cleanedVal = isNaN(num) ? null : num;
+                        }
+                        candidateUpdate[f] = cleanedVal;
                     }
+                });
 
+                // Update candidate in Supabase with the entire row payload
+                if (Object.keys(candidateUpdate).length > 0) {
                     const { error } = await supabase
                         .from("candidates")
-                        .update({ [field]: cleanedValue })
+                        .update(candidateUpdate)
                         .eq("id", row._candidate_id);
 
-                    if (error) console.error("Error updating candidate:", error);
+                    if (error) console.error("Error updating candidate from sheet row:", error);
                 }
             }
         }
@@ -311,38 +325,11 @@ export default function useSpreadsheet(fileId) {
 
       const columns = file.columns || [];
 
-        const aliases = {
-        full_name: ["Name", "Candidate Name", "Full Name"],
-        email: ["Email", "Email ID", "Email Address"],
-        phone: ["Phone", "Contact Number", "Mobile", "Mobile Number"],
-        current_company: ["Company", "Current Company", "Current Org"],
-        position: ["Position", "Position Title", "Job Title"],
-        notes: ["Remarks", "Notes"],
-        status: ["Status"],
-        experience_years: [
-          "Experience",
-          "Experience (Yrs)",
-          "Years of Experience",
-        ],
-        location: ["Location", "Position Location"],
-        sourced_by: ["Sourced By", "Sourced_by", "Sourcedby"],
-        current_ctc: ["Current Fixed CTC", "Current CTC", "Fixed CTC", "CTC"],
-        expected_ctc: ["Expected CTC", "Expected Salary"],
-        academics: ["Academics", "Education", "Qualification"],
-        linkedin: ["LinkedIn", "LinkedIn Profile Link", "LinkedIn Link"],
-        sent_on: ["Sent On", "Submission Date", "Date Sent"],
-        hr: ["HR", "HR Name", "HR Recruiter"],
-      };
-
-      // Find the mapped column headers
+      // Find the mapped column headers using central mapHeaderToField
       const mappings = {};
       columns.forEach((col) => {
-        for (const [field, names] of Object.entries(aliases)) {
-          if (names.some((name) => name.toLowerCase() === col.toLowerCase())) {
-            mappings[col] = field;
-            break;
-          }
-        }
+        const field = mapHeaderToField(col);
+        if (field) mappings[col] = field;
       });
 
       // Fetch existing candidates for comparison
@@ -371,10 +358,10 @@ export default function useSpreadsheet(fileId) {
           data_file_id: fileId,
         };
 
-                  Object.entries(mappings).forEach(([col, field]) => {
+        Object.entries(mappings).forEach(([col, field]) => {
           const val = row[col];
           if (val !== undefined && val !== null && val !== "") {
-            if (field === "experience_years" || field === "expected_ctc" || field === "row_order") {
+            if (["experience_years", "expected_ctc", "current_ctc", "expected_salary", "row_order"].includes(field)) {
               const num = parseFloat(String(val).replace(/[^0-9.]/g, ""));
               candidateData[field] = isNaN(num) ? null : num;
             } else if (field === "sent_on") {
@@ -399,8 +386,6 @@ export default function useSpreadsheet(fileId) {
 
         if (!checkName && !checkEmail && !checkPhone) continue;
         if (!checkName) continue; // Candidate must have a name to be synchronized
-        // Ensure required fields
-        if (!candidateData.full_name) continue;
 
         let existingCandidate = null;
         let isNewLink = false;
@@ -459,7 +444,6 @@ export default function useSpreadsheet(fileId) {
             candidateData.email = `noemail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@placeholder.local`;
           }
 
-
           const { data: inserted, error } = await supabase
             .from("candidates")
             .insert([candidateData])
@@ -475,7 +459,6 @@ export default function useSpreadsheet(fileId) {
           }
         }
       }
-
 
       const { error: fileUpdateError } = await supabase
         .from("data_files")

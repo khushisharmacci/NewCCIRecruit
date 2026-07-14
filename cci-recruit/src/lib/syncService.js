@@ -32,7 +32,6 @@ const FIELD_ALIASES = {
   updated_by: ["updated by", "updated_by"],
   spoken_by: ["spoken by", "spoken_by"],
   candidate_date: ["candidate date", "candidate_date"],
-  row_order: ["sr no", "sr. no", "sr.no.", "sr.no", "serial number", "s.no.", "s.no", "sno"],
 };
 
 /**
@@ -131,7 +130,7 @@ export async function syncRowToCandidate(row, dataFile, tenantFilter, stampRecor
       
       // Filter out whitespace-only strings
       if (strVal === "") {
-        if (field === "experience_years" || field === "expected_ctc" || field === "row_order" || field === "sent_on" || field === "candidate_date") {
+        if (["experience_years", "expected_ctc", "current_ctc", "expected_salary", "row_order", "sent_on", "candidate_date"].includes(field)) {
           candidateData[field] = null;
         } else {
           candidateData[field] = "";
@@ -139,7 +138,7 @@ export async function syncRowToCandidate(row, dataFile, tenantFilter, stampRecor
         return;
       }
 
-      if (field === "experience_years" || field === "expected_ctc" || field === "row_order") {
+      if (["experience_years", "expected_ctc", "current_ctc", "expected_salary", "row_order"].includes(field)) {
         const num = parseFloat(strVal.replace(/[^0-9.]/g, ""));
         if (!isNaN(num)) candidateData[field] = num;
       } else if (field === "sent_on" || field === "candidate_date") {
@@ -255,58 +254,85 @@ export function syncCandidateToRow(candidate, dataFile) {
  * Save rows back to a DataFile entity.
  */
 export async function saveSpreadsheetRows(dataFileID, rows) {
-  return await base44.entities.DataFile.update(dataFile.id, {
-    rows_data: JSON.stringify(rows),
-    row_count: rows.filter((r) => !r._row_id || !r._row_id.startsWith("__deleted")).length,
-  });
+  const { data, error } = await supabase
+    .from("data_files")
+    .update({
+      rows_data: rows,
+      row_count: rows.filter((r) => !r._row_id || !String(r._row_id).startsWith("__deleted")).length,
+    })
+    .eq("id", dataFileID)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 // ─── Remarks Synchronization ────────────────────────────────────────────────
 /**
  * Sync remarks/notes across Candidate, Spreadsheet, and optionally Call Log.
  * This is the single source of truth for remarks.
- *
- * @param {object} params
- * @param {string} params.candidateId - The candidate to update
- * @param {string} params.remarks - The new remarks value
- * @param {string} [params.spreadsheetId] - Optional DataFile ID
- * @param {string} [params.spreadsheetRowId] - Optional row ID
- * @param {string} [params.callLogId] - Optional call log ID to update discussion_notes
  */
 export async function syncRemarks({ candidateId, remarks, spreadsheetId, spreadsheetRowId, callLogId }) {
   const updates = [];
 
   // Update candidate notes
   if (candidateId) {
-    updates.push(base44.entities.Candidate.update(candidateId, { notes: remarks }));
+    updates.push(
+      supabase
+        .from("candidates")
+        .update({ notes: remarks })
+        .eq("id", candidateId)
+    );
   }
 
   // Update spreadsheet remarks column
   if (spreadsheetId) {
     try {
-      const dataFile = await base44.entities.DataFile.get(spreadsheetId);
-      const columns = JSON.parse(dataFile.columns || "[]");
-      const remarksCol = getColumnForField("notes", columns);
-      if (remarksCol) {
-        let rows = [];
-        try { rows = JSON.parse(dataFile.rows_data || "[]"); } catch { rows = []; }
-        const rowIdx = rows.findIndex((r) =>
-          (spreadsheetRowId && r._row_id === spreadsheetRowId) ||
-          (candidateId && r._candidate_id === candidateId)
-        );
-        if (rowIdx >= 0) {
-          rows[rowIdx][remarksCol] = remarks;
-          updates.push(base44.entities.DataFile.update(spreadsheetId, {
-            rows_data: JSON.stringify(rows),
-          }));
+      const { data: dataFile, error: fileError } = await supabase
+        .from("data_files")
+        .select("*")
+        .eq("id", spreadsheetId)
+        .single();
+
+      if (!fileError && dataFile) {
+        const columns = typeof dataFile.columns === "string" ? JSON.parse(dataFile.columns || "[]") : dataFile.columns || [];
+        const remarksCol = getColumnForField("notes", columns);
+        if (remarksCol) {
+          let rows = [];
+          try {
+            rows = typeof dataFile.rows_data === "string" ? JSON.parse(dataFile.rows_data || "[]") : dataFile.rows_data || [];
+          } catch {
+            rows = [];
+          }
+          const rowIdx = rows.findIndex((r) =>
+            (spreadsheetRowId && String(r._row_id) === String(spreadsheetRowId)) ||
+            (candidateId && r._candidate_id === candidateId)
+          );
+          if (rowIdx >= 0) {
+            rows[rowIdx][remarksCol] = remarks;
+            updates.push(
+              supabase
+                .from("data_files")
+                .update({ rows_data: rows })
+                .eq("id", spreadsheetId)
+            );
+          }
         }
       }
-    } catch { /* spreadsheet may not exist */ }
+    } catch (err) {
+      console.error("Error syncing remarks to spreadsheet:", err);
+    }
   }
 
   // Update call log discussion notes
   if (callLogId) {
-    updates.push(base44.entities.DailyReportCallLog.update(callLogId, { discussion_notes: remarks }));
+    updates.push(
+      supabase
+        .from("daily_report_call_logs")
+        .update({ discussion_notes: remarks })
+        .eq("id", callLogId)
+    );
   }
 
   await Promise.all(updates);
@@ -320,9 +346,13 @@ export async function syncRemarks({ candidateId, remarks, spreadsheetId, spreads
  * @returns { created, updated, failed }
  */
 export async function syncSpreadsheetToCandidates(dataFile, tenantFilter, stampRecord) {
-  const columns = JSON.parse(dataFile.columns || "[]");
+  const columns = typeof dataFile.columns === "string" ? JSON.parse(dataFile.columns || "[]") : (dataFile.columns || []);
   let rows = [];
-  try { rows = JSON.parse(dataFile.rows_data || "[]"); } catch { rows = []; }
+  try {
+    rows = typeof dataFile.rows_data === "string" ? JSON.parse(dataFile.rows_data || "[]") : (dataFile.rows_data || []);
+  } catch {
+    rows = [];
+  }
 
   let created = 0, updated = 0, failed = 0;
   const BATCH = 25;
@@ -335,13 +365,16 @@ export async function syncSpreadsheetToCandidates(dataFile, tenantFilter, stampR
         if (result.candidate) {
           // Update the row with linking data
           Object.assign(row, result.row);
-          // Check if it was create or update by looking at created_date
-          if (result.candidate.created_date === result.candidate.updated_date) created++;
-          else updated++;
+          if (result.candidate.created_at === result.candidate.updated_at) {
+            created++;
+          } else {
+            updated++;
+          }
         } else {
           failed++;
         }
-      } catch {
+      } catch (err) {
+        console.error("Row sync failed:", err);
         failed++;
       }
     }));
