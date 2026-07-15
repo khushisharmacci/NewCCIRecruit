@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { mapHeaderToField } from "@/lib/syncService";
 import {
   Select,
   SelectContent,
@@ -128,6 +129,42 @@ const filteredPositions = selectedCompany
   useEffect(() => {
     setNameSearch(form.person_name);
   }, [form.person_name]);
+
+    // Auto-populate spreadsheet custom fields for Name and Phone
+  useEffect(() => {
+    if (!selectedSpreadsheetId || form.candidate_id) return; // Only for new candidates
+
+    setSpreadsheetFields((prev) => {
+      const updated = { ...prev };
+      let changed = false;
+
+      spreadsheetColumns.forEach((col) => {
+        const field = mapHeaderToField(col);
+        
+        // Auto-fill candidate Name field
+        if (field === "full_name") {
+          if (updated[col] === undefined || updated[col] === "" || updated[col] === nameSearch) {
+            if (updated[col] !== nameSearch) {
+              updated[col] = nameSearch;
+              changed = true;
+            }
+          }
+        }
+        
+        // Auto-fill candidate Phone number field
+        if (field === "phone") {
+          if (updated[col] === undefined || updated[col] === "" || updated[col] === form.phone_number) {
+            if (updated[col] !== form.phone_number) {
+              updated[col] = form.phone_number;
+              changed = true;
+            }
+          }
+        }
+      });
+
+      return changed ? updated : prev; // Return same reference if no changes to prevent infinite loops
+    });
+  }, [nameSearch, form.phone_number, selectedSpreadsheetId, spreadsheetColumns, form.candidate_id]);
 
   const startAdd = () => {
     setForm(emptyForm);
