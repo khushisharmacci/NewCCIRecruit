@@ -295,7 +295,7 @@ export default function Candidates() {
     },
   });
 
-    const deleteMutation = useMutation({
+      const deleteMutation = useMutation({
     mutationFn: async (id) => {
       const candidate = candidates.find(c => c.id === id);
       if (candidate?.data_file_id) {
@@ -307,7 +307,11 @@ export default function Candidates() {
           .single();
 
         if (file?.rows_data) {
-          const updatedRows = file.rows_data.filter(
+          const rawRows = typeof file.rows_data === "string"
+            ? JSON.parse(file.rows_data || "[]")
+            : file.rows_data || [];
+
+          const updatedRows = rawRows.filter(
             (r) => r._candidate_id !== candidate.id
           );
 
@@ -320,7 +324,13 @@ export default function Candidates() {
         }
       }
 
-      // Delete linked records first to prevent foreign key errors
+      // 1. Unlink candidate from daily report call logs to prevent database FK constraint error
+      await supabase
+        .from("daily_report_call_logs")
+        .update({ candidate_id: null })
+        .eq("candidate_id", id);
+
+      // 2. Delete linked records
       await supabase
         .from("client_submissions")
         .delete()
@@ -331,6 +341,7 @@ export default function Candidates() {
         .delete()
         .eq("candidate_id", id);
 
+      // 3. Delete candidate profile
       const { error } = await supabase
         .from("candidates")
         .delete()
@@ -344,6 +355,7 @@ export default function Candidates() {
       setDeleteId(null);
     }
   });
+
 useEffect(() => {
   setSelectedCandidates([]);
 }, [search, statusFilter, fileFilter]);
@@ -371,68 +383,79 @@ const filtered = candidates.filter((c) => {
   return matchSearch && matchStatus && matchFile;
 });
 
-    const handleDeleteSelected = async () => {
-  if (
-    !window.confirm(
-      `Delete ${selectedCandidates.length} candidate(s)?`
-    )
-  ) return;
+      const handleDeleteSelected = async () => {
+    if (
+      !window.confirm(
+        `Delete ${selectedCandidates.length} candidate(s)?`
+      )
+    ) return;
 
-  // Filter spreadsheet rows for all selected candidates
-  for (const candidateId of selectedCandidates) {
-    const candidate = candidates.find(c => c.id === candidateId);
-    if (candidate?.data_file_id) {
-      const { data: file } = await supabase
-        .from("data_files")
-        .select("rows_data")
-        .eq("id", candidate.data_file_id)
-        .single();
-
-      if (file?.rows_data) {
-        const updatedRows = file.rows_data.filter(
-          (r) => r._candidate_id !== candidateId
-        );
-
-        await supabase
+    // Filter spreadsheet rows for all selected candidates
+    for (const candidateId of selectedCandidates) {
+      const candidate = candidates.find(c => c.id === candidateId);
+      if (candidate?.data_file_id) {
+        const { data: file } = await supabase
           .from("data_files")
-          .update({
-            rows_data: updatedRows,
-          })
-          .eq("id", candidate.data_file_id);
+          .select("rows_data")
+          .eq("id", candidate.data_file_id)
+          .single();
+
+        if (file?.rows_data) {
+          const rawRows = typeof file.rows_data === "string"
+            ? JSON.parse(file.rows_data || "[]")
+            : file.rows_data || [];
+
+          const updatedRows = rawRows.filter(
+            (r) => r._candidate_id !== candidateId
+          );
+
+          await supabase
+            .from("data_files")
+            .update({
+              rows_data: updatedRows,
+            })
+            .eq("id", candidate.data_file_id);
+        }
       }
     }
-  }
 
-  // Delete linked records first to prevent foreign key errors
-  await supabase
-    .from("client_submissions")
-    .delete()
-    .in("candidate_id", selectedCandidates);
+    // 1. Unlink candidates from daily report call logs to prevent database FK constraint error
+    await supabase
+      .from("daily_report_call_logs")
+      .update({ candidate_id: null })
+      .in("candidate_id", selectedCandidates);
 
-  await supabase
-    .from("interviews")
-    .delete()
-    .in("candidate_id", selectedCandidates);
+    // 2. Delete linked records
+    await supabase
+      .from("client_submissions")
+      .delete()
+      .in("candidate_id", selectedCandidates);
 
-  const { error } = await supabase
-    .from("candidates")
-    .delete()
-    .in("id", selectedCandidates);
+    await supabase
+      .from("interviews")
+      .delete()
+      .in("candidate_id", selectedCandidates);
 
-  if (error) {
-    alert(error.message);
-    return;
-  }
+    // 3. Delete candidate profiles
+    const { error } = await supabase
+      .from("candidates")
+      .delete()
+      .in("id", selectedCandidates);
 
-  setSelectedCandidates([]);
+    if (error) {
+      alert(error.message);
+      return;
+    }
 
-  queryClient.invalidateQueries({
-    queryKey: ["candidates"],
-  });
-  queryClient.invalidateQueries({
-    queryKey: ["spreadsheet"],
-  });
-};
+    setSelectedCandidates([]);
+
+    queryClient.invalidateQueries({
+      queryKey: ["candidates"],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ["spreadsheet"],
+    });
+  };
 
 const handleSave = async (data) => {
   const stamped = stampRecord(data);
