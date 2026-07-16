@@ -347,7 +347,13 @@ export default function Candidates() {
 useEffect(() => {
   setSelectedCandidates([]);
 }, [search, statusFilter, fileFilter]);
-  const filtered = candidates.filter((c) => {
+
+const filtered = candidates.filter((c) => {
+  // Ignore and hide any empty/placeholder rows
+  if (!c.full_name || c.full_name.startsWith("noemail_")) {
+    return false;
+  }
+
   const matchSearch =
     !search ||
     c.full_name?.toLowerCase().includes(search.toLowerCase()) ||
