@@ -4,34 +4,66 @@ import { supabase } from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTenant } from "@/lib/tenant";
+
+// Simple custom debounce hook
+function useDebounce(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 
 export default function CandidateSearch({ value, onSelect, error }) {
+  const { companyId } = useTenant();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(-1);
   const containerRef = useRef(null);
 
-  const { data: candidates = [] } = useQuery({
-  queryKey: ["candidates"],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from("candidates")
-      .select("*")
-      .order("full_name");
+  const debouncedQuery = useDebounce(query, 300);
 
-    if (error) throw error;
+  const { data: candidates = [], isLoading } = useQuery({
+    queryKey: ["candidates", companyId, debouncedQuery],
+    queryFn: async () => {
+      let q = supabase
+        .from("candidates")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("full_name")
+        .limit(20);
 
-    return data || [];
-  },
-});
+      // Perform server-side search matching name, email, or phone
+      if (debouncedQuery.trim()) {
+        q = q.or(`full_name.ilike.%${debouncedQuery}%,email.ilike.%${debouncedQuery}%,phone.ilike.%${debouncedQuery}%`);
+      }
 
-  const filtered = query.trim()
-    ? candidates.filter(c =>
-        (c.full_name || "").toLowerCase().includes(query.toLowerCase()) ||
-        (c.email || "").toLowerCase().includes(query.toLowerCase()) ||
-        (c.phone || "").toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 8)
-    : candidates.slice(0, 8);
+      const { data, error } = await q;
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!companyId,
+  });
+
+  // Filter out candidates with empty or placeholder names
+  const validCandidates = candidates.filter(
+    (c) =>
+      c.full_name &&
+      c.full_name.trim() !== "" &&
+      !c.full_name.toLowerCase().startsWith("noemail")
+  );
+
+  const filtered = validCandidates.slice(0, 8);
 
   useEffect(() => {
     const handler = (e) => {
@@ -88,7 +120,9 @@ export default function CandidateSearch({ value, onSelect, error }) {
       )}
       {open && !value && (
         <div className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-md shadow-lg max-h-64 overflow-y-auto">
-          {filtered.length === 0 ? (
+          {isLoading ? (
+            <div className="p-3 text-sm text-muted-foreground text-center">Searching...</div>
+          ) : filtered.length === 0 ? (
             <div className="p-3 text-sm text-muted-foreground text-center">No candidates found</div>
           ) : (
             filtered.map((c, idx) => (

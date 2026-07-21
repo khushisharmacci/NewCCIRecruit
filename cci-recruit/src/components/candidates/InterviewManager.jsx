@@ -226,10 +226,9 @@ const statuses = [
   company_id: candidate.company_id,
   user_id: candidate.user_id,
 
-  created_by:
-    user?.full_name ||
-    user?.name ||
-    user?.email ||
+    created_by:
+    (user?.full_name || user?.name)?.trim().split(" ")[0] ||
+    user?.email?.split("@")[0] ||
     "",
 
   ...form,

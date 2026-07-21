@@ -168,16 +168,18 @@ return inserted;
   },
 });
 
-  const handleSave = (data) => {
-  console.log("HANDLE SAVE DATA");
-  console.log(JSON.stringify(data, null, 2));
+    const handleSave = (data) => {
+    console.log("HANDLE SAVE DATA");
+    console.log(JSON.stringify(data, null, 2));
 
-  if (editing) {
-    updateMutation.mutate({ id: editing.id, data });
-  } else {
-    createMutation.mutate(data);
-  }
-};
+    if (editing) {
+      updateMutation.mutate({ id: editing.id, data });
+    } else {
+      // Get the first name of the logged-in user
+      const firstName = user?.full_name?.trim().split(" ")[0] || user?.name?.trim().split(" ")[0] || "";
+      createMutation.mutate({ ...data, created_by: firstName });
+    }
+  };
 
   const handleReschedule = (interview) => {
     setEditing(interview);
