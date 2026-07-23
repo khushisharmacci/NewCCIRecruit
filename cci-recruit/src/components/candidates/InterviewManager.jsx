@@ -216,15 +216,16 @@ const statuses = [
 
   const handleSubmit = () => {
    const data = {
-  candidate_id: candidate.id,
-  candidate_name: candidate.full_name,
-  position_title:
+   candidate_id: candidate.id,
+   candidate_name: candidate.full_name,
+   position_title:
     candidate.position_title ||
     candidate.position ||
     "",
 
-  company_id: candidate.company_id,
-  user_id: candidate.user_id,
+   company_id: candidate.company_id,
+   company_name: candidate.current_company || "",
+   user_id: candidate.user_id,
 
     created_by:
     (user?.full_name || user?.name)?.trim().split(" ")[0] ||

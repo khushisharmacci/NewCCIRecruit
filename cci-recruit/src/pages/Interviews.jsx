@@ -6,8 +6,9 @@ import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, Pencil, Trash2, CalendarX, Video, MapPin, Clock, Calendar, Filter } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, CalendarX, Clock, Calendar, Filter, Eye } from "lucide-react";
 import { format, parseISO, isToday, isTomorrow, isThisWeek } from "date-fns";
 import { cn } from "@/lib/utils";
 import InterviewForm from "@/components/interviews/InterviewForm";
@@ -25,8 +26,6 @@ const statusColors = {
 const STATUS_FILTERS = ["All", "Scheduled", "Completed", "Cancelled", "Rescheduled", "On Hold"];
 const DATE_FILTERS = ["All Time", "Today", "Tomorrow", "This Week"];
 
-
-
 export default function Interviews() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -40,142 +39,103 @@ export default function Interviews() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [previewTarget, setPreviewTarget] = useState(null);
 
   const { data: interviews = [], isLoading } = useQuery({
-  queryKey: ["interviews"],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from("interviews")
-      .select("*")
-      .order("interview_date", { ascending: false });
+    queryKey: ["interviews"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("interviews")
+        .select("*")
+        .order("interview_date", { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    return data || [];
-  },
-});
+      return data || [];
+    },
+  });
 
   const invalidateAll = () => {
-  qc.invalidateQueries({
-    queryKey: ["interviews"],
-  });
-
-  qc.invalidateQueries({
-    queryKey: ["candidate-interviews"],
-  });
-
-  qc.invalidateQueries({
-    queryKey: ["upcoming-interviews"],
-  });
-
-  qc.invalidateQueries({
-    queryKey: ["notifications"],
-  });
-
-  qc.invalidateQueries({
-    queryKey: ["sidebar-notifications"],
-  });
-
-  qc.invalidateQueries({
-    queryKey: ["dashboard"],
-  });
-};
+    qc.invalidateQueries({ queryKey: ["interviews"] });
+    qc.invalidateQueries({ queryKey: ["candidate-interviews"] });
+    qc.invalidateQueries({ queryKey: ["upcoming-interviews"] });
+    qc.invalidateQueries({ queryKey: ["notifications"] });
+    qc.invalidateQueries({ queryKey: ["sidebar-notifications"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+  };
 
   const createMutation = useMutation({
-  mutationFn: async (data) => {
-    console.log("INSERT DATA");
-    console.log(JSON.stringify(data, null, 2));
+    mutationFn: async (data) => {
+      const { data: inserted, error } = await supabase
+        .from("interviews")
+        .insert([data])
+        .select()
+        .single();
 
-    const { data: inserted, error } = await supabase
-  .from("interviews")
-  .insert([data])
-  .select()
-  .single();
-
-if (error) throw error;
-
-return inserted;
-
-  },
-
-  onSuccess: () => {
-  invalidateAll();
-
-  setFormOpen(false);
-  setEditing(null);
-
-  toast({
-    title: "Interview scheduled successfully",
+      if (error) throw error;
+      return inserted;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      setFormOpen(false);
+      setEditing(null);
+      toast({ title: "Interview scheduled successfully" });
+    },
   });
-},
-});
 
   const updateMutation = useMutation({
-  mutationFn: async ({ id, data }) => {
-    const { data: updated, error } = await supabase
-      .from("interviews")
-      .update(data)
-      .eq("id", id)
-      .select()
-      .single();
+    mutationFn: async ({ id, data }) => {
+      const { data: updated, error } = await supabase
+        .from("interviews")
+        .update(data)
+        .eq("id", id)
+        .select()
+        .single();
 
-    if (error) throw error;
+      if (error) throw error;
+      return updated;
+    },
+    onSuccess: async (updated, { action }) => {
+      invalidateAll();
 
-    return updated;
-  },
+      if (action) {
+        await supabase.from("notifications").insert([
+          {
+            title: `Interview ${action}: ${updated.candidate_name}`,
+            message: `Interview ${action} for ${updated.candidate_name}`,
+            type: "Interview",
+            read: false,
+            link: "/interviews",
+          },
+        ]);
+      }
 
-  onSuccess: async (updated, { action }) => {
-    invalidateAll();
-
-    if (action) {
-      await supabase.from("notifications").insert([
-        {
-          title: `Interview ${action}: ${updated.candidate_name}`,
-          message: `Interview ${action} for ${updated.candidate_name}`,
-          type: "Interview",
-          read: false,
-          link: "/interviews",
-        },
-      ]);
-    }
-
-    setFormOpen(false);
-    setEditing(null);
-
-    toast({
-      title: "Interview updated",
-    });
-  },
-});
+      setFormOpen(false);
+      setEditing(null);
+      toast({ title: "Interview updated" });
+    },
+  });
 
   const deleteMutation = useMutation({
-  mutationFn: async (id) => {
-    const { error } = await supabase
-      .from("interviews")
-      .delete()
-      .eq("id", id);
+    mutationFn: async (id) => {
+      const { error } = await supabase
+        .from("interviews")
+        .delete()
+        .eq("id", id);
 
-    if (error) throw error;
-  },
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      setDeleteTarget(null);
+      toast({ title: "Interview deleted" });
+    },
+  });
 
-  onSuccess: () => {
-    invalidateAll();
-    setDeleteTarget(null);
-
-    toast({
-      title: "Interview deleted",
-    });
-  },
-});
-
-    const handleSave = (data) => {
-    console.log("HANDLE SAVE DATA");
-    console.log(JSON.stringify(data, null, 2));
-
+  const handleSave = (data) => {
     if (editing) {
       updateMutation.mutate({ id: editing.id, data });
     } else {
-      // Get the first name of the logged-in user
       const firstName = user?.full_name?.trim().split(" ")[0] || user?.name?.trim().split(" ")[0] || "";
       createMutation.mutate({ ...data, created_by: firstName });
     }
@@ -296,17 +256,15 @@ return inserted;
                   <th className="px-4 py-3 font-medium">Company</th>
                   <th className="px-4 py-3 font-medium">Position</th>
                   <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Time</th>
-                  <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Created By</th>
-                  <th className="px-4 py-3 font-medium">Notes</th>
+                  <th className="px-4 py-3 font-medium">Sourced By</th>
+                  <th className="px-4 py-3 font-medium">Spoken By</th>
                   <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map(i => {
-                  const TypeIcon = i.interview_type === "Online" ? Video : MapPin;
                   return (
                     <tr key={i.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
@@ -320,19 +278,15 @@ return inserted;
                       <td className="px-4 py-3 text-muted-foreground truncate max-w-[100px]">{i.company_name || "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground truncate max-w-[100px]">{i.position_title || "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground">{i.interview_date ? format(parseISO(i.interview_date), "MMM d, yyyy") : "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{i.interview_time || "—"}</td>
-                      <td className="px-4 py-3">
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <TypeIcon className="h-3.5 w-3.5" /> {i.interview_type || "—"}
-                        </span>
-                      </td>
                       <td className="px-4 py-3">
                         <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", statusColors[i.status] || statusColors.Scheduled)}>{i.status}</span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground truncate max-w-[80px]">{i.created_by || "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[120px]">{i.notes || "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[80px]">{i.sourced_by || "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[80px]">{i.spoken_by || "—"}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-0.5 justify-end">
+                          <button onClick={() => setPreviewTarget(i)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Preview Details"><Eye className="h-3.5 w-3.5" /></button>
                           <button onClick={() => { setEditing(i); setFormOpen(true); }} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
                           {i.status === "Scheduled" && (
                             <>
@@ -354,19 +308,76 @@ return inserted;
       )}
 
       <InterviewForm
-  open={formOpen}
-  onOpenChange={(v) => {
-    setFormOpen(v);
+        open={formOpen}
+        onOpenChange={(v) => {
+          setFormOpen(v);
+          if (!v) setEditing(null);
+        }}
+        editing={editing}
+        onSave={handleSave}
+        isLoading={createMutation.isPending || updateMutation.isPending}
+      />
 
-    if (!v) setEditing(null);
-  }}
-  editing={editing}
-  onSave={handleSave}
-  isLoading={
-    createMutation.isPending ||
-    updateMutation.isPending
-  }
-/>
+      {/* Preview Modal */}
+      <Dialog open={!!previewTarget} onOpenChange={(v) => !v && setPreviewTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Interview Details</DialogTitle>
+          </DialogHeader>
+          {previewTarget && (
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Candidate</span>
+                <span className="font-semibold text-foreground">{previewTarget.candidate_name}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Company</span>
+                <span className="font-medium">{previewTarget.company_name || "—"}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Position</span>
+                <span className="font-medium">{previewTarget.position_title || "—"}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Date & Time</span>
+                <span>{previewTarget.interview_date ? format(parseISO(previewTarget.interview_date), "MMM d, yyyy") : "—"} {previewTarget.interview_time ? `at ${previewTarget.interview_time}` : ""}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Type</span>
+                <span>{previewTarget.interview_type || "—"}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Status</span>
+                <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", statusColors[previewTarget.status])}>{previewTarget.status}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Created By</span>
+                <span>{previewTarget.created_by || "—"}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Sourced By</span>
+                <span>{previewTarget.sourced_by || "—"}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Spoken By</span>
+                <span>{previewTarget.spoken_by || "—"}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Interviewer</span>
+                <span>{previewTarget.interviewer || "—"}</span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground">Location / Link</span>
+                <span>{previewTarget.location || "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-1">Notes</span>
+                <div className="p-2.5 rounded-md bg-muted/40 text-xs text-foreground whitespace-pre-wrap">{previewTarget.notes || "No notes added"}</div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
         <AlertDialogContent>
