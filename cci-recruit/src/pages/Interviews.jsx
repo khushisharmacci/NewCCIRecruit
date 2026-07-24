@@ -6,9 +6,8 @@ import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, Pencil, Trash2, CalendarX, Clock, Calendar, Filter, Eye } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, CalendarX, Video, MapPin, Clock, Calendar, Filter, User } from "lucide-react";
 import { format, parseISO, isToday, isTomorrow, isThisWeek } from "date-fns";
 import { cn } from "@/lib/utils";
 import InterviewForm from "@/components/interviews/InterviewForm";
@@ -39,7 +38,6 @@ export default function Interviews() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [previewTarget, setPreviewTarget] = useState(null);
 
   const { data: interviews = [], isLoading } = useQuery({
     queryKey: ["interviews"],
@@ -97,7 +95,6 @@ export default function Interviews() {
     },
     onSuccess: async (updated, { action }) => {
       invalidateAll();
-
       if (action) {
         await supabase.from("notifications").insert([
           {
@@ -109,7 +106,6 @@ export default function Interviews() {
           },
         ]);
       }
-
       setFormOpen(false);
       setEditing(null);
       toast({ title: "Interview updated" });
@@ -136,8 +132,7 @@ export default function Interviews() {
     if (editing) {
       updateMutation.mutate({ id: editing.id, data });
     } else {
-      const firstName = user?.full_name?.trim().split(" ")[0] || user?.name?.trim().split(" ")[0] || "";
-      createMutation.mutate({ ...data, created_by: firstName });
+      createMutation.mutate(data);
     }
   };
 
@@ -159,7 +154,12 @@ export default function Interviews() {
   const filtered = interviews.filter(i => {
     if (search) {
       const q = search.toLowerCase();
-      if (!i.candidate_name?.toLowerCase().includes(q) && !i.company_name?.toLowerCase().includes(q) && !i.position_title?.toLowerCase().includes(q)) return false;
+      if (
+        !i.candidate_name?.toLowerCase().includes(q) &&
+        !i.company_name?.toLowerCase().includes(q) &&
+        !i.position_title?.toLowerCase().includes(q) &&
+        !i.interviewer?.toLowerCase().includes(q)
+      ) return false;
     }
     if (statusFilter !== "All" && i.status !== statusFilter) return false;
     if (companyFilter !== "All" && i.company_name !== companyFilter) return false;
@@ -193,7 +193,7 @@ export default function Interviews() {
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search by candidate, company, position..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input className="pl-9" placeholder="Search candidate, company, interviewer..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <Select value={companyFilter} onValueChange={setCompanyFilter}>
             <SelectTrigger className="w-40"><SelectValue placeholder="Company" /></SelectTrigger>
@@ -251,42 +251,81 @@ export default function Interviews() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 border-b border-border">
-                <tr className="text-left text-xs text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">Candidate</th>
-                  <th className="px-4 py-3 font-medium">Company</th>
-                  <th className="px-4 py-3 font-medium">Position</th>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Created By</th>
-                  <th className="px-4 py-3 font-medium">Sourced By</th>
-                  <th className="px-4 py-3 font-medium">Spoken By</th>
-                  <th className="px-4 py-3 font-medium text-right">Actions</th>
+                <tr className="text-left text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                  <th className="px-4 py-3">Candidate & Mode</th>
+                  <th className="px-4 py-3">Company / Position</th>
+                  <th className="px-4 py-3">Date & Time</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Interviewer</th>
+                  <th className="px-4 py-3">Created By</th>
+                  <th className="px-4 py-3">Sourced By</th>
+                  <th className="px-4 py-3">Spoken By</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map(i => {
+                  const TypeIcon = i.interview_type === "Online" ? Video : MapPin;
                   return (
                     <tr key={i.id} className="hover:bg-muted/30 transition-colors">
+                      {/* Candidate & Mode */}
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2.5">
                           <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-xs font-bold text-primary">
                             {(i.candidate_name || "?").charAt(0).toUpperCase()}
                           </div>
-                          <span className="font-medium text-foreground truncate max-w-[120px]">{i.candidate_name}</span>
+                          <div>
+                            <span className="font-semibold text-foreground truncate max-w-[130px] block">{i.candidate_name}</span>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded mt-0.5">
+                              <TypeIcon className="h-3 w-3 text-primary" /> {i.interview_type || "Online"}
+                            </span>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[100px]">{i.company_name || "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[100px]">{i.position_title || "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{i.interview_date ? format(parseISO(i.interview_date), "MMM d, yyyy") : "—"}</td>
+
+                      {/* Company / Position */}
                       <td className="px-4 py-3">
-                        <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", statusColors[i.status] || statusColors.Scheduled)}>{i.status}</span>
+                        <p className="font-medium text-foreground truncate max-w-[120px]">{i.company_name || "—"}</p>
+                        <p className="text-xs text-muted-foreground truncate max-w-[120px]">{i.position_title || "—"}</p>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[80px]">{i.created_by || "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[80px]">{i.sourced_by || "—"}</td>
-                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[80px]">{i.spoken_by || "—"}</td>
+
+                      {/* Date & Time */}
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-foreground whitespace-nowrap">
+                          {i.interview_date ? format(parseISO(i.interview_date), "MMM d, yyyy") : "—"}
+                        </p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 whitespace-nowrap">
+                          <Clock className="h-3 w-3 text-primary/70" /> {i.interview_time || "—"}
+                        </p>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3">
+                        <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", statusColors[i.status] || statusColors.Scheduled)}>
+                          {i.status}
+                        </span>
+                      </td>
+
+                      {/* Interviewer */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5 text-foreground text-sm font-medium">
+                          <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate max-w-[110px]">{i.interviewer || "—"}</span>
+                        </div>
+                      </td>
+
+                      {/* Created By */}
+                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[90px]">{i.created_by || "—"}</td>
+
+                      {/* Sourced By */}
+                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[90px]">{i.sourced_by || i.created_by || "—"}</td>
+
+                      {/* Spoken By */}
+                      <td className="px-4 py-3 text-muted-foreground truncate max-w-[90px]">{i.spoken_by || i.created_by || "—"}</td>
+
+                      {/* Actions */}
                       <td className="px-4 py-3">
                         <div className="flex gap-0.5 justify-end">
-                          <button onClick={() => setPreviewTarget(i)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Preview Details"><Eye className="h-3.5 w-3.5" /></button>
                           <button onClick={() => { setEditing(i); setFormOpen(true); }} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
                           {i.status === "Scheduled" && (
                             <>
@@ -317,67 +356,6 @@ export default function Interviews() {
         onSave={handleSave}
         isLoading={createMutation.isPending || updateMutation.isPending}
       />
-
-      {/* Preview Modal */}
-      <Dialog open={!!previewTarget} onOpenChange={(v) => !v && setPreviewTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Interview Details</DialogTitle>
-          </DialogHeader>
-          {previewTarget && (
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Candidate</span>
-                <span className="font-semibold text-foreground">{previewTarget.candidate_name}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Company</span>
-                <span className="font-medium">{previewTarget.company_name || "—"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Position</span>
-                <span className="font-medium">{previewTarget.position_title || "—"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Date & Time</span>
-                <span>{previewTarget.interview_date ? format(parseISO(previewTarget.interview_date), "MMM d, yyyy") : "—"} {previewTarget.interview_time ? `at ${previewTarget.interview_time}` : ""}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Type</span>
-                <span>{previewTarget.interview_type || "—"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Status</span>
-                <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", statusColors[previewTarget.status])}>{previewTarget.status}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Created By</span>
-                <span>{previewTarget.created_by || "—"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Sourced By</span>
-                <span>{previewTarget.sourced_by || "—"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Spoken By</span>
-                <span>{previewTarget.spoken_by || "—"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Interviewer</span>
-                <span>{previewTarget.interviewer || "—"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Location / Link</span>
-                <span>{previewTarget.location || "—"}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block mb-1">Notes</span>
-                <div className="p-2.5 rounded-md bg-muted/40 text-xs text-foreground whitespace-pre-wrap">{previewTarget.notes || "No notes added"}</div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
         <AlertDialogContent>
