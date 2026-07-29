@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabase";
-
 import {
   Upload,
   X,
@@ -12,7 +11,6 @@ import {
   Download,
   Loader2,
 } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 
 function formatFileSize(bytes) {
@@ -46,16 +44,17 @@ export default function AttachmentUploader({
 
   const handleFiles = async (fileList) => {
     const files = Array.from(fileList);
-
     if (!files.length) return;
 
     setUploading(true);
 
     try {
       for (const file of files) {
+        // Sanitize file name for Supabase storage key (remove brackets, spaces, and special characters)
+        const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         const filePath = `${Date.now()}-${Math.random()
           .toString(36)
-          .substring(2)}-${file.name}`;
+          .substring(2)}-${sanitizedFileName}`;
 
         const { error } = await supabase.storage
           .from("daily-report-files")
@@ -147,7 +146,6 @@ export default function AttachmentUploader({
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
                 <Upload className="h-4 w-4" />
                 Browse Files
-
                 <input
                   type="file"
                   multiple

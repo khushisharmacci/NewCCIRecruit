@@ -17,6 +17,7 @@ export default function InterviewForm({
 }) {
   const [candidate, setCandidate] = useState(null);
   const [company, setCompany] = useState(null);
+  const [prevCandidateId, setPrevCandidateId] = useState(null);
   const [errors, setErrors] = useState({});
   const [form, setForm] = useState({
     position_title: "",
@@ -27,13 +28,11 @@ export default function InterviewForm({
     notes: "",
     status: "Scheduled",
     interviewer: "",
-    sourced_by: "",
-    spoken_by: "",
   });
 
   useEffect(() => {
     if (editing) {
-      setCandidate({
+      const candObj = {
         id: editing.candidate_id,
         full_name: editing.candidate_name,
         email: editing.email || "",
@@ -41,11 +40,13 @@ export default function InterviewForm({
         current_company: editing.company_name,
         position_title: editing.position_title,
         company_id: editing.company_id || "",
-      });
+      };
+      setCandidate(candObj);
+      setPrevCandidateId(editing.candidate_id);
       setCompany(
-        editing.company_id
+        editing.company_id || editing.company_name
           ? {
-              id: editing.company_id,
+              id: editing.company_id || "",
               name: editing.company_name || "",
               industry: editing.industry || "",
             }
@@ -60,11 +61,10 @@ export default function InterviewForm({
         notes: editing.notes || editing.feedback || "",
         status: editing.status || "Scheduled",
         interviewer: editing.interviewer || "",
-        sourced_by: editing.sourced_by || "",
-        spoken_by: editing.spoken_by || "",
       });
     } else {
       setCandidate(null);
+      setPrevCandidateId(null);
       setCompany(null);
       setForm({
         position_title: "",
@@ -75,23 +75,19 @@ export default function InterviewForm({
         notes: "",
         status: "Scheduled",
         interviewer: "",
-        sourced_by: "",
-        spoken_by: "",
       });
     }
     setErrors({});
   }, [editing, open]);
 
-  // Auto-populate from selected candidate
+  // Auto-populate from selected candidate when a NEW candidate is selected
   useEffect(() => {
-    if (candidate) {
-      setForm((f) => ({
-        ...f,
-        position_title: candidate.position_title || f.position_title,
-        sourced_by: candidate.sourced_by || f.sourced_by,
-        spoken_by: candidate.spoken_by || f.spoken_by,
-      }));
-      if (candidate.current_company && !company) {
+    if (candidate && candidate.id !== prevCandidateId) {
+      setPrevCandidateId(candidate.id);
+      if (candidate.position_title) {
+        setForm(f => ({ ...f, position_title: candidate.position_title }));
+      }
+      if (candidate.current_company) {
         setCompany({
           id: candidate.company_id || "",
           name: candidate.current_company,
@@ -99,7 +95,7 @@ export default function InterviewForm({
         });
       }
     }
-  }, [candidate, company]);
+  }, [candidate, prevCandidateId]);
 
   const STATUSES = [
     "Scheduled",
@@ -124,15 +120,10 @@ export default function InterviewForm({
       candidate_id: candidate.id,
       candidate_name: candidate.full_name,
       company_id: company.id,
-      company_name: company.name,
-      sourced_by: form.sourced_by.trim(),
-      spoken_by: form.spoken_by.trim(),
-
       position_title: form.position_title.trim(),
       location: form.location.trim(),
       notes: form.notes.trim(),
       interviewer: form.interviewer.trim(),
-
       interview_date: form.interview_date,
       interview_time: form.interview_time,
       interview_type: form.interview_type,
@@ -224,24 +215,6 @@ export default function InterviewForm({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Sourced By</Label>
-              <Input
-                value={form.sourced_by}
-                onChange={(e) => setForm({ ...form, sourced_by: e.target.value })}
-                placeholder="Recruiter name"
-              />
-            </div>
-            <div>
-              <Label>Spoken By</Label>
-              <Input
-                value={form.spoken_by}
-                onChange={(e) => setForm({ ...form, spoken_by: e.target.value })}
-                placeholder="Recruiter name"
-              />
             </div>
           </div>
           <div>
