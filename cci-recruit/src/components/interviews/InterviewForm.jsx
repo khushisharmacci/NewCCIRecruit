@@ -117,18 +117,19 @@ export default function InterviewForm({
     if (Object.keys(errs).length > 0) return;
 
     onSave({
-      candidate_id: candidate.id,
-      candidate_name: candidate.full_name,
-      company_id: company.id,
-      position_title: form.position_title.trim(),
-      location: form.location.trim(),
-      notes: form.notes.trim(),
-      interviewer: form.interviewer.trim(),
-      interview_date: form.interview_date,
-      interview_time: form.interview_time,
-      interview_type: form.interview_type,
-      status: form.status,
-    });
+  candidate_id: candidate.id,
+  candidate_name: candidate.full_name,
+  company_id: company.id,
+  company_name: company.name, // ✅ Now saved & reflected in UI
+  position_title: form.position_title.trim(),
+  location: form.location.trim(),
+  notes: form.notes.trim(),
+  interviewer: form.interviewer.trim(),
+  interview_date: form.interview_date,
+  interview_time: form.interview_time,
+  interview_type: form.interview_type,
+  status: form.status,
+});
   };
 
   return (
