@@ -28,6 +28,8 @@ export default function InterviewForm({
     notes: "",
     status: "Scheduled",
     interviewer: "",
+    sourced_by: "",
+    spoken_by: "",
   });
 
   useEffect(() => {
@@ -40,6 +42,8 @@ export default function InterviewForm({
         current_company: editing.company_name,
         position_title: editing.position_title,
         company_id: editing.company_id || "",
+        sourced_by: editing.sourced_by || "",
+        spoken_by: editing.spoken_by || "",
       };
       setCandidate(candObj);
       setPrevCandidateId(editing.candidate_id);
@@ -61,6 +65,8 @@ export default function InterviewForm({
         notes: editing.notes || editing.feedback || "",
         status: editing.status || "Scheduled",
         interviewer: editing.interviewer || "",
+        sourced_by: editing.sourced_by || "",
+        spoken_by: editing.spoken_by || "",
       });
     } else {
       setCandidate(null);
@@ -75,6 +81,8 @@ export default function InterviewForm({
         notes: "",
         status: "Scheduled",
         interviewer: "",
+        sourced_by: "",
+        spoken_by: "",
       });
     }
     setErrors({});
@@ -93,6 +101,13 @@ export default function InterviewForm({
           name: candidate.current_company,
           industry: candidate.industry || "",
         });
+      }
+      if (candidate.sourced_by || candidate.spoken_by) {
+        setForm(f => ({
+          ...f,
+          sourced_by: candidate.sourced_by || f.sourced_by,
+          spoken_by: candidate.spoken_by || f.spoken_by,
+        }));
       }
     }
   }, [candidate, prevCandidateId]);
@@ -117,19 +132,21 @@ export default function InterviewForm({
     if (Object.keys(errs).length > 0) return;
 
     onSave({
-  candidate_id: candidate.id,
-  candidate_name: candidate.full_name,
-  company_id: company.id,
-  company_name: company.name, // ✅ Now saved & reflected in UI
-  position_title: form.position_title.trim(),
-  location: form.location.trim(),
-  notes: form.notes.trim(),
-  interviewer: form.interviewer.trim(),
-  interview_date: form.interview_date,
-  interview_time: form.interview_time,
-  interview_type: form.interview_type,
-  status: form.status,
-});
+      candidate_id: candidate.id,
+      candidate_name: candidate.full_name,
+      company_id: company.id,
+      company_name: company.name,
+      position_title: form.position_title.trim(),
+      location: form.location.trim(),
+      notes: form.notes.trim(),
+      interviewer: form.interviewer.trim(),
+      sourced_by: form.sourced_by.trim(),
+      spoken_by: form.spoken_by.trim(),
+      interview_date: form.interview_date,
+      interview_time: form.interview_time,
+      interview_type: form.interview_type,
+      status: form.status,
+    });
   };
 
   return (
@@ -216,6 +233,24 @@ export default function InterviewForm({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Sourced By</Label>
+              <Input
+                value={form.sourced_by}
+                onChange={(e) => setForm({ ...form, sourced_by: e.target.value })}
+                placeholder="Recruiter name"
+              />
+            </div>
+            <div>
+              <Label>Spoken By</Label>
+              <Input
+                value={form.spoken_by}
+                onChange={(e) => setForm({ ...form, spoken_by: e.target.value })}
+                placeholder="Recruiter name"
+              />
             </div>
           </div>
           <div>
