@@ -26,6 +26,7 @@ import UserProfile from "./pages/UserProfile";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import ProfilesShared from "./pages/ProfilesShared";
 
 import Layout from "./components/Layout";
 
@@ -197,6 +198,11 @@ const AuthenticatedApp = () => {
       <Route
         path="/profile"
         element={<UserProfile />}
+      />
+
+      <Route
+        path="/profiles-shared"
+        element={<ProfilesShared />}
       />
 
       <Route

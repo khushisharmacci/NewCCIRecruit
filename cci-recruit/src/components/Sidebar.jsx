@@ -27,6 +27,7 @@ import {
   ClipboardList,
   CalendarClock,
   Network,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can, ROLE_LABELS } from "@/lib/roles";
@@ -89,6 +90,12 @@ const role = user?.role || "recruiter";
   });
 
 if (can.viewRecruitment(user)) {
+  items.push({
+    path: "/profiles-shared",
+    label: "Profiles Shared",
+    icon: Send,
+  });
+
   items.push({
     path: "/interviews",
     label: "Interviews",
