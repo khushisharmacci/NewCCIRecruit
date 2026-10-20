@@ -114,10 +114,19 @@ function StepAccount({
   );
 }
 
-function ConfirmEmailStep({ email, onCheckStatus, error, loading }) {
+function ConfirmEmailStep({
+  email,
+  onCheckStatus,
+  onResend,
+  onBackToAccount,
+  resendLoading,
+  resendCooldown,
+  error,
+  loading,
+}) {
   return (
-    <div className="text-center space-y-6">
-      <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 mb-2">
+    <div className="text-center space-y-5">
+      <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 mb-1">
         <Mail className="w-7 h-7 text-primary" />
       </div>
       <h1 className="text-2xl font-bold text-foreground">Verify your email</h1>
@@ -132,15 +141,52 @@ function ConfirmEmailStep({ email, onCheckStatus, error, loading }) {
         </div>
       )}
 
-      <Button className="w-full h-12 font-medium" onClick={onCheckStatus} disabled={loading}>
-        {loading ? (
-          <>
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Checking verification...
-          </>
-        ) : (
-          "I've verified my email"
-        )}
-      </Button>
+      <div className="space-y-3 pt-2">
+        <Button className="w-full h-12 font-medium" onClick={onCheckStatus} disabled={loading}>
+          {loading ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Checking verification...
+            </>
+          ) : (
+            "I've verified my email"
+          )}
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full h-11 text-sm font-medium"
+          onClick={onResend}
+          disabled={resendLoading || resendCooldown > 0}
+        >
+          {resendLoading ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending link...
+            </>
+          ) : resendCooldown > 0 ? (
+            `Resend link in ${resendCooldown}s`
+          ) : (
+            "Resend verification email"
+          )}
+        </Button>
+
+        <button
+          type="button"
+          onClick={onBackToAccount}
+          className="text-xs text-muted-foreground hover:text-foreground underline pt-1 block mx-auto"
+        >
+          Entered wrong email? Change email address
+        </button>
+      </div>
+
+      <div className="p-3.5 rounded-xl bg-muted/40 border border-border text-xs text-muted-foreground text-left space-y-1">
+        <p className="font-semibold text-foreground">Can't find the verification email?</p>
+        <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+          <li>Check your Spam, Junk, or Promotions folder</li>
+          <li>Wait 1-2 minutes for email delivery</li>
+          <li>Or ask your administrator to activate your email directly in User Management</li>
+        </ul>
+      </div>
     </div>
   );
 }
@@ -213,6 +259,8 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [company, setCompany] = useState({ name: "", address: "", phone: "" });
   const [files, setFiles] = useState({});
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -221,6 +269,27 @@ export default function Register() {
     if (urlStep) setStep(urlStep);
     if (urlEmail) setEmail(urlEmail);
   }, []);
+
+  // Countdown timer for resend email
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
+  // Auto-poll to detect email confirmation automatically if user clicked link in another tab or phone
+  useEffect(() => {
+    if (step !== "confirm_email") return;
+    const interval = setInterval(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.refreshSession();
+        if (session?.user?.email_confirmed_at) {
+          setStep("company_type");
+        }
+      } catch {}
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [step]);
 
   const handleGoogle = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -244,8 +313,11 @@ export default function Register() {
     }
     setLoading(true);
     try {
+      const cleanEmail = email.trim();
+      localStorage.setItem("pending_verification_email", cleanEmail);
+
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: cleanEmail,
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/login`,
@@ -253,23 +325,72 @@ export default function Register() {
       });
 
       if (error) throw error;
-      setStep("confirm_email");
+
+      // If project has email confirmation disabled, user session is active immediately
+      if (data?.session) {
+        setStep("company_type");
+      } else {
+        setStep("confirm_email");
+      }
     } catch (err) {
-      setError(err.message || "Registration failed");
+      console.error("Signup error:", err);
+      let msg = err.message || "Registration failed";
+      if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("email_exists")) {
+        msg = "This email is already registered. If you haven't verified it yet, click below to resend verification, or log in with your password.";
+      } else if (msg.includes("rate limit") || msg.includes("429")) {
+        msg = "Supabase email rate limit exceeded. Please wait a few moments or ask your company admin to add your account directly from User Management.";
+      }
+      setError(msg);
     }
     setLoading(false);
+  };
+
+  const handleResendVerification = async () => {
+    if (resendCooldown > 0 || resendLoading) return;
+    setResendLoading(true);
+    setError("");
+    try {
+      const cleanEmail = email.trim();
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: cleanEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Verification email sent",
+        description: `A new link has been sent to ${cleanEmail}. Check your inbox and spam folder.`,
+      });
+      setResendCooldown(60);
+    } catch (err) {
+      console.error("Resend error:", err);
+      let msg = err.message || "Failed to resend verification email";
+      if (msg.includes("rate limit") || msg.includes("429")) {
+        msg = "Email rate limit exceeded (Supabase default mailer limits to 3 emails/hr). Please ask your administrator to add your email directly from User Management.";
+      }
+      setError(msg);
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   const handleCheckEmailStatus = async () => {
     setError("");
     setLoading(true);
     try {
+      // Refresh session first to fetch latest email_confirmed_at
+      await supabase.auth.refreshSession();
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error) throw error;
+
       if (user && user.email_confirmed_at) {
         setStep("company_type");
       } else {
-        setError("We couldn't confirm your email yet. Please make sure you click the link in your email inbox.");
+        setError("We couldn't confirm your email yet. Please make sure you click the link in your email inbox, then click here again.");
       }
     } catch (err) {
       setError(err.message || "Failed to verify email status");
@@ -287,15 +408,16 @@ export default function Register() {
       if (isCeo) {
         setStep("company");
       } else {
-        // Create Recruiter profile directly without status columns
+        // Create Recruiter profile directly with pending_approval status
         const { error: profileError } = await supabase
           .from("recruiters")
           .insert({
             auth_user_id: authUser.id,
             company_id: "default", // Join default team company
             email: authUser.email,
-            full_name: authUser.email.split("@")[0],
+            full_name: authUser.user_metadata?.full_name || authUser.email.split("@")[0],
             role: "recruiter",
+            account_status: "pending_approval",
           });
 
         if (profileError) throw profileError;
@@ -391,6 +513,13 @@ export default function Register() {
           <ConfirmEmailStep
             email={email}
             onCheckStatus={handleCheckEmailStatus}
+            onResend={handleResendVerification}
+            onBackToAccount={() => {
+              setError("");
+              setStep("account");
+            }}
+            resendLoading={resendLoading}
+            resendCooldown={resendCooldown}
             error={error}
             loading={loading}
           />

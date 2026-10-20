@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Mail, Lock, Loader2, Building2, Shield, Eye, EyeOff, ChevronDown } from "lucide-react";
+import { Mail, Lock, Loader2, Building2, Shield, Eye, EyeOff, ChevronDown, CheckCircle2 } from "lucide-react";
 import GoogleIcon from "@/components/GoogleIcon";
 
 function LogoHeader() {
@@ -27,7 +27,27 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // 1. Check for stored pending registration email
+    const storedEmail = localStorage.getItem("pending_verification_email");
+    if (storedEmail && !email) {
+      setEmail(storedEmail);
+    }
+
+    // 2. Check for URL hash fragments from Supabase email verification callback
+    const hash = window.location.hash;
+    const params = new URLSearchParams(window.location.search);
+
+    if (hash && (hash.includes("type=signup") || hash.includes("type=email_change") || hash.includes("access_token"))) {
+      setSuccessMessage("Email verified successfully! You can now log in with your email and password.");
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (params.get("verified") === "true") {
+      setSuccessMessage("Email verified successfully! Please log in with your credentials.");
+    }
+  }, []);
 
   // Platform login secret trigger: click the CCI logo 5 times
   const [logoClicks, setLogoClicks] = useState(0);
@@ -50,7 +70,7 @@ export default function Login() {
 
     try {
       const { data, error: loginError } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       });
 
@@ -59,15 +79,20 @@ export default function Login() {
       // Check if profile exists in public.recruiters
       const { data: recruiter, error: lookupError } = await supabase
         .from("recruiters")
-        .select("id")
-        .eq("auth_user_id", data.user.id)
+        .select("*")
+        .or(`auth_user_id.eq.${data.user.id},email.ilike.${email.trim()}`)
         .maybeSingle();
 
       if (lookupError) throw lookupError;
 
       if (!recruiter) {
         // Logged in but profile was not set up. Redirect to company onboarding.
-        window.location.href = `/register?step=company_type&email=${encodeURIComponent(email)}`;
+        window.location.href = `/register?step=company_type&email=${encodeURIComponent(email.trim())}`;
+      } else if (recruiter.account_status === "suspended") {
+        await supabase.auth.signOut();
+        setError("Your account has been suspended. Please contact your company administrator.");
+      } else if (recruiter.account_status === "pending_approval") {
+        window.location.href = "/pending";
       } else {
         window.location.href = "/dashboard";
       }
@@ -205,6 +230,13 @@ export default function Login() {
               <span className="bg-background px-3 text-muted-foreground">or sign in with email</span>
             </div>
           </div>
+
+          {successMessage && (
+            <div className="mb-4 p-3.5 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-sm flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <span>{successMessage}</span>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-destructive/15 text-destructive-foreground border border-destructive/30 text-sm">{error}</div>

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { can, ROLE_LABELS, ASSIGNABLE_ROLE_LIST, getRoleLevel, USER_STATUS_LABELS, assignableRoles } from "@/lib/roles";
-import { Users, UserPlus, Shield, Search, Pencil, Mail, Loader2, CheckCircle2, Ban, Clock, RefreshCw, Trash2 } from "lucide-react";
+import { Users, UserPlus, Shield, Search, Pencil, Mail, Loader2, CheckCircle2, Ban, Clock, RefreshCw, Trash2, Key, Eye, EyeOff, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -62,8 +62,23 @@ const isMaster = true;
   const [editUser, setEditUser] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState("recruiter");
+  const [invitePassword, setInvitePassword] = useState("CCI@Recruit2026!");
+  const [showPassword, setShowPassword] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const generateStrongPassword = () => {
+    const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$%&*";
+    let pwd = "CCI@";
+    for (let i = 0; i < 8; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return pwd + "!";
+  };
 
   const { data: users = [], isLoading } = useQuery({
   queryKey: ["all-users"],
@@ -173,50 +188,113 @@ const deleteUser = useMutation({
   };
 
   const handleInvite = async () => {
-  if (!inviteEmail.trim()) return;
+    if (!inviteEmail.trim()) {
+      toast.error("Please enter an email address");
+      return;
+    }
 
-  setInviting(true);
+    setInviting(true);
+    const cleanEmail = inviteEmail.trim().toLowerCase();
+    const cleanPassword = invitePassword.trim() || generateStrongPassword();
+    const cleanName = inviteName.trim() || cleanEmail.split("@")[0];
 
-  try {
-    const { data, error } = await supabase.functions.invoke(
-      "quick-handler",
-      {
-        body: {
-          email: inviteEmail.trim(),
-          role: inviteRole,
-        },
+    try {
+      let resultData = null;
+      let success = false;
+
+      // 1. Attempt Vercel serverless function first
+      try {
+        const apiRes = await fetch("/api/admin-create-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: cleanEmail,
+            password: cleanPassword,
+            role: inviteRole,
+            full_name: cleanName,
+            company_id: companyId,
+          }),
+        });
+
+        const apiData = await apiRes.json().catch(() => null);
+        if (apiRes.ok && apiData?.success) {
+          resultData = apiData;
+          success = true;
+        } else if (apiData?.error && !apiData?.needs_config) {
+          console.warn("API returned error:", apiData.error);
+        }
+      } catch (apiErr) {
+        console.warn("API route not available, falling back to edge function:", apiErr);
       }
-    );
 
-    console.log("INVITE DATA", data);
-    console.log("INVITE ERROR", error);
+      // 2. Fall back to Supabase Edge Function 'quick-handler'
+      if (!success) {
+        const { data, error } = await supabase.functions.invoke("quick-handler", {
+          body: {
+            email: cleanEmail,
+            password: cleanPassword,
+            role: inviteRole,
+            full_name: cleanName,
+            company_id: companyId,
+          },
+        });
 
-    if (error) throw error;
+        if (error) {
+          let detailedMsg = error.message || "Failed to create user";
+          if (error.context) {
+            try {
+              const errJson = await error.context.json();
+              detailedMsg = errJson.message || errJson.error || detailedMsg;
+            } catch {}
+          }
+          throw new Error(detailedMsg);
+        }
 
-    await logAudit({
-      actor: user,
-      targetEmail: inviteEmail,
-      newRole: inviteRole,
-      notes: `Invited by ${user?.full_name || user?.email}`,
-    });
+        if (data?.error) {
+          throw new Error(data.error);
+        }
 
-    toast.success("Invitation sent successfully");
+        resultData = data;
+        success = true;
+      }
 
-    queryClient.invalidateQueries({
-      queryKey: ["all-users"],
-    });
+      await logAudit({
+        actor: user,
+        targetEmail: cleanEmail,
+        newRole: inviteRole,
+        notes: `Created user account with credentials by ${user?.full_name || user?.email}`,
+      });
 
-    setInviteEmail("");
-    setInviteRole("recruiter");
-    setInviteOpen(false);
+      toast.success("User account created and activated!");
 
-  } catch (err) {
-    console.error("FULL ERROR", err);
-    toast.error(err.message || "Failed to send invite");
-  } finally {
-    setInviting(false);
-  }
-};
+      queryClient.invalidateQueries({
+        queryKey: ["all-users"],
+      });
+
+      // Save credentials and present credential dialog to admin
+      setCreatedCredentials({
+        email: cleanEmail,
+        password: cleanPassword,
+        role: inviteRole,
+        full_name: cleanName,
+      });
+
+      setInviteOpen(false);
+      setInviteEmail("");
+      setInviteName("");
+      setInvitePassword(generateStrongPassword());
+      setCredentialsOpen(true);
+    } catch (err) {
+      console.error("FULL ERROR", err);
+      let message = err.message || "Failed to create user account";
+      if (message.includes("rate limit") || message.includes("429")) {
+        message = "Supabase email rate limit exceeded. Please configure custom SMTP in Supabase settings or use direct credentials.";
+      }
+      toast.error(message);
+    } finally {
+      setInviting(false);
+    }
+  };
 
   if (!can.manageUsers(user)) {
     return (
@@ -248,7 +326,7 @@ const deleteUser = useMutation({
           <p className="text-muted-foreground text-sm">Manage roles, approval workflow and access control</p>
         </div>
         <Button onClick={() => setInviteOpen(true)} className="gap-2">
-          <UserPlus className="h-4 w-4" /> Invite User
+          <UserPlus className="h-4 w-4" /> Add / Invite User
         </Button>
       </div>
 
@@ -467,42 +545,228 @@ const deleteUser = useMutation({
         </DialogContent>
       </Dialog>
 
-      {/* Invite Dialog */}
+      {/* Add / Invite User Dialog */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-md bg-[#0F172A] border border-slate-700 text-white shadow-2xl">
           <DialogHeader>
-            <DialogTitle>Invite New User</DialogTitle>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-primary" />
+              Add or Invite New User
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
-            <div className="p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground">
-              The invited user will be set to <strong>Pending Approval</strong> until you assign and activate their account.
+            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
+              Users added here are <strong>immediately activated</strong> with their assigned password so they can log in at <code>/login</code> without waiting for email verification.
             </div>
+
             <div className="space-y-1.5">
-              <Label>Email Address</Label>
+              <Label className="text-slate-200">Full Name</Label>
+              <Input
+                type="text"
+                value={inviteName}
+                onChange={(e) => setInviteName(e.target.value)}
+                placeholder="e.g. Niharika Sharma"
+                className="bg-slate-900 border-slate-700 text-white placeholder:text-slate-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-slate-200">Email Address <span className="text-red-400">*</span></Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="colleague@company.com" className="pl-9" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="colleague@company.com"
+                  className="pl-9 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500"
+                  required
+                />
               </div>
             </div>
+
             <div className="space-y-1.5">
-              <Label>Pre-assign Role (optional)</Label>
+              <Label className="text-slate-200">Role</Label>
               <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {canAssign.map(r => (
-                    <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700 text-white">
+                  {canAssign.map((r) => (
+                    <SelectItem key={r} value={r} className="hover:bg-slate-800 focus:bg-slate-800 text-white">
+                      {ROLE_LABELS[r]}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-3 pt-1">
-              <Button variant="outline" className="flex-1" onClick={() => setInviteOpen(false)}>Cancel</Button>
-              <Button className="flex-1 gap-2" onClick={handleInvite} disabled={!inviteEmail.trim() || inviting}>
-                {inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-                Send Invite
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-slate-200">Login Password <span className="text-red-400">*</span></Label>
+                <button
+                  type="button"
+                  onClick={() => setInvitePassword(generateStrongPassword())}
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw className="h-3 w-3" /> Auto-generate
+                </button>
+              </div>
+              <div className="relative">
+                <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={invitePassword}
+                  onChange={(e) => setInvitePassword(e.target.value)}
+                  placeholder="Enter login password"
+                  className="pl-9 pr-10 bg-slate-900 border-slate-700 text-white font-mono text-sm"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                You will be able to copy these credentials and share them directly with the user.
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
+                onClick={() => setInviteOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 gap-2 bg-primary text-primary-foreground font-semibold"
+                onClick={handleInvite}
+                disabled={!inviteEmail.trim() || inviting}
+              >
+                {inviting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Adding User...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4" /> Create & Activate
+                  </>
+                )}
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credentials Confirmation Dialog */}
+      <Dialog open={credentialsOpen} onOpenChange={setCredentialsOpen}>
+        <DialogContent className="max-w-md bg-[#0F172A] border border-slate-700 text-white shadow-2xl">
+          <DialogHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 mb-2">
+              <CheckCircle2 className="h-7 w-7" />
+            </div>
+            <DialogTitle className="text-center text-xl font-bold">
+              Account Created Successfully!
+            </DialogTitle>
+          </DialogHeader>
+
+          {createdCredentials && (
+            <div className="space-y-4 text-sm mt-1">
+              <p className="text-center text-slate-300 text-xs">
+                This user account is now <strong className="text-emerald-400">Active</strong>. The user can log in immediately with the credentials below:
+              </p>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 font-mono text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Login URL</span>
+                  <a
+                    href={`${window.location.origin}/login`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline break-all"
+                  >
+                    {window.location.origin}/login
+                  </a>
+                </div>
+
+                <div>
+                  <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Full Name</span>
+                  <span className="text-slate-200">{createdCredentials.full_name}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Email Address</span>
+                    <span className="text-slate-200 font-semibold">{createdCredentials.email}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-slate-400 hover:text-white"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdCredentials.email);
+                      toast.success("Email copied!");
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Password</span>
+                    <span className="text-amber-300 font-semibold">{createdCredentials.password}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-slate-400 hover:text-white"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdCredentials.password);
+                      toast.success("Password copied!");
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                <div>
+                  <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Role</span>
+                  <span className="text-emerald-300 font-sans font-medium uppercase text-xs">
+                    {ROLE_LABELS[createdCredentials.role] || createdCredentials.role}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  className="flex-1 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                  onClick={() => {
+                    const message = `Welcome to cciRecruit!\n\nHere are your login credentials:\nLogin URL: ${window.location.origin}/login\nEmail: ${createdCredentials.email}\nPassword: ${createdCredentials.password}\nRole: ${ROLE_LABELS[createdCredentials.role] || createdCredentials.role}`;
+                    navigator.clipboard.writeText(message);
+                    setCopied(true);
+                    toast.success("All credentials copied to clipboard!");
+                    setTimeout(() => setCopied(false), 3000);
+                  }}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? "Copied to Clipboard!" : "Copy All Credentials"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                  onClick={() => setCredentialsOpen(false)}
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
