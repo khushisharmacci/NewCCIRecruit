@@ -119,36 +119,52 @@ serve(async (req: Request) => {
       authUserId = createData.user.id;
     }
 
-    // 2. Upsert in recruiters table
+    // 2. Upsert in recruiters table (only existing columns)
     const { data: existingRecruiter } = await supabaseAdmin
       .from("recruiters")
       .select("id")
       .or(`auth_user_id.eq.${authUserId},email.ilike.${cleanEmail}`)
       .maybeSingle();
 
+    const recruiterPayload = {
+      auth_user_id: authUserId,
+      email: cleanEmail,
+      full_name: userName,
+      role: role,
+      company_id: company_id,
+    };
+
     if (existingRecruiter) {
-      await supabaseAdmin
+      const { error: recruiterUpdateError } = await supabaseAdmin
         .from("recruiters")
-        .update({
-          auth_user_id: authUserId,
-          email: cleanEmail,
-          full_name: userName,
-          role: role,
-          account_status: "active",
-          company_id: company_id,
-        })
+        .update(recruiterPayload)
         .eq("id", existingRecruiter.id);
+
+      if (recruiterUpdateError) {
+        console.error("Recruiter update error:", recruiterUpdateError);
+        return new Response(
+          JSON.stringify({ error: recruiterUpdateError.message }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          }
+        );
+      }
     } else {
-      await supabaseAdmin
+      const { error: recruiterInsertError } = await supabaseAdmin
         .from("recruiters")
-        .insert({
-          auth_user_id: authUserId,
-          email: cleanEmail,
-          full_name: userName,
-          role: role,
-          account_status: "active",
-          company_id: company_id,
-        });
+        .insert(recruiterPayload);
+
+      if (recruiterInsertError) {
+        console.error("Recruiter insert error:", recruiterInsertError);
+        return new Response(
+          JSON.stringify({ error: recruiterInsertError.message }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          }
+        );
+      }
     }
 
     return new Response(
