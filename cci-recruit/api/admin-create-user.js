@@ -103,43 +103,39 @@ export default async function handler(req, res) {
       authUserId = createData.user.id;
     }
 
-    // 2. Upsert user in recruiters profile table
+    // 2. Upsert user in recruiters profile table (only using existing columns)
     const { data: existingRecruiter } = await supabaseAdmin
       .from("recruiters")
       .select("id")
       .or(`auth_user_id.eq.${authUserId},email.ilike.${cleanEmail}`)
       .maybeSingle();
 
+    const recruiterPayload = {
+      auth_user_id: authUserId,
+      email: cleanEmail,
+      full_name: userName,
+      role: role,
+      company_id: company_id,
+    };
+
     if (existingRecruiter) {
       const { error: recruiterUpdateError } = await supabaseAdmin
         .from("recruiters")
-        .update({
-          auth_user_id: authUserId,
-          email: cleanEmail,
-          full_name: userName,
-          role: role,
-          account_status: "active",
-          company_id: company_id,
-        })
+        .update(recruiterPayload)
         .eq("id", existingRecruiter.id);
 
       if (recruiterUpdateError) {
-        console.warn("Recruiter table update warning:", recruiterUpdateError);
+        console.error("Recruiter table update error:", recruiterUpdateError);
+        throw recruiterUpdateError;
       }
     } else {
       const { error: recruiterInsertError } = await supabaseAdmin
         .from("recruiters")
-        .insert({
-          auth_user_id: authUserId,
-          email: cleanEmail,
-          full_name: userName,
-          role: role,
-          account_status: "active",
-          company_id: company_id,
-        });
+        .insert(recruiterPayload);
 
       if (recruiterInsertError) {
-        console.warn("Recruiter table insert warning:", recruiterInsertError);
+        console.error("Recruiter table insert error:", recruiterInsertError);
+        throw recruiterInsertError;
       }
     }
 
