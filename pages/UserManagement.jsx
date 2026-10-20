@@ -147,15 +147,15 @@ const deleteUser = useMutation({
     const original = users.find(u => u.id === editUser.id);
     const roleChanged = original?.role !== editUser.role;
 
+    const dataPayload = {
+      role: editUser.role,
+      phone: editUser.phone || null,
+      full_name: editUser.full_name || null,
+    };
+
     await updateUser.mutateAsync({
       id: editUser.id,
-      data: {
-        role: editUser.role,
-        account_status: editUser.account_status,
-        department: editUser.department,
-        designation: editUser.designation,
-        phone: editUser.phone,
-      }
+      data: dataPayload,
     });
 
     if (roleChanged) {
@@ -170,20 +170,20 @@ const deleteUser = useMutation({
   };
 
   const handleApprove = (u) => {
-    updateUser.mutate({ id: u.id, data: { account_status: "active", role: u.role || "viewer" } });
-    logAudit({ actor: user, targetEmail: u.email, newRole: u.role || "viewer", companyId, notes: `${user?.full_name || user?.email} approved account for ${u.email}` });
+    updateUser.mutate({ id: u.id, data: { role: u.role || "recruiter" } });
+    logAudit({ actor: user, targetEmail: u.email, newRole: u.role || "recruiter", companyId, notes: `${user?.full_name || user?.email} approved account for ${u.email}` });
     toast.success(`${u.full_name || u.email} approved`);
   };
 
   const handleSuspend = (u) => {
-    updateUser.mutate({ id: u.id, data: { account_status: "suspended" } });
-    logAudit({ actor: user, targetEmail: u.email, oldRole: u.role, newRole: u.role, companyId, notes: `${user?.full_name || user?.email} suspended ${u.email}` });
+    updateUser.mutate({ id: u.id, data: { role: "viewer" } });
+    logAudit({ actor: user, targetEmail: u.email, oldRole: u.role, newRole: "viewer", companyId, notes: `${user?.full_name || user?.email} suspended ${u.email}` });
     toast.success(`${u.full_name || u.email} suspended`);
   };
 
   const handleReactivate = (u) => {
-    updateUser.mutate({ id: u.id, data: { account_status: "active" } });
-    logAudit({ actor: user, targetEmail: u.email, oldRole: u.role, newRole: u.role, companyId, notes: `${user?.full_name || user?.email} reactivated ${u.email}` });
+    updateUser.mutate({ id: u.id, data: { role: "recruiter" } });
+    logAudit({ actor: user, targetEmail: u.email, oldRole: u.role, newRole: "recruiter", companyId, notes: `${user?.full_name || user?.email} reactivated ${u.email}` });
     toast.success(`${u.full_name || u.email} reactivated`);
   };
 

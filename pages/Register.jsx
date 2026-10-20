@@ -261,13 +261,16 @@ export default function Register() {
   const [files, setFiles] = useState({});
   const [resendLoading, setResendLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [mode, setMode] = useState("company");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlStep = params.get("step");
     const urlEmail = params.get("email");
+    const urlMode = params.get("mode");
     if (urlStep) setStep(urlStep);
     if (urlEmail) setEmail(urlEmail);
+    if (urlMode) setMode(urlMode);
   }, []);
 
   // Countdown timer for resend email
@@ -408,7 +411,7 @@ export default function Register() {
       if (isCeo) {
         setStep("company");
       } else {
-        // Create Recruiter profile directly with pending_approval status
+        // Create Recruiter profile directly without non-existent status columns
         const { error: profileError } = await supabase
           .from("recruiters")
           .insert({
@@ -417,14 +420,18 @@ export default function Register() {
             email: authUser.email,
             full_name: authUser.user_metadata?.full_name || authUser.email.split("@")[0],
             role: "recruiter",
-            account_status: "pending_approval",
           });
 
-        if (profileError) throw profileError;
-        window.location.href = "/pending";
+        if (profileError) {
+          console.error("Recruiter profile creation error:", profileError);
+          throw profileError;
+        }
+
+        window.location.href = "/dashboard";
       }
     } catch (err) {
-      setError(err.message);
+      console.error("handleRoleChoice error:", err);
+      setError(err.message || "Failed to set up profile");
     }
     setLoading(false);
   };

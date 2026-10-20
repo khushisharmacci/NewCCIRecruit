@@ -77,25 +77,49 @@ export default function Login() {
       if (loginError) throw loginError;
 
       // Check if profile exists in public.recruiters
-      const { data: recruiter, error: lookupError } = await supabase
+      let { data: recruiter, error: lookupError } = await supabase
         .from("recruiters")
         .select("*")
         .or(`auth_user_id.eq.${data.user.id},email.ilike.${email.trim()}`)
         .maybeSingle();
 
-      if (lookupError) throw lookupError;
-
-      if (!recruiter) {
-        // Logged in but profile was not set up. Redirect to company onboarding.
-        window.location.href = `/register?step=company_type&email=${encodeURIComponent(email.trim())}`;
-      } else if (recruiter.account_status === "suspended") {
-        await supabase.auth.signOut();
-        setError("Your account has been suspended. Please contact your company administrator.");
-      } else if (recruiter.account_status === "pending_approval") {
-        window.location.href = "/pending";
-      } else {
-        window.location.href = "/dashboard";
+      if (lookupError) {
+        console.warn("Recruiter lookup error:", lookupError);
       }
+
+      // If recruiter profile does not exist yet, but user was created with a role (e.g. by an Admin):
+      if (!recruiter && data.user) {
+        const preAssignedRole = data.user.user_metadata?.role;
+        const preAssignedName = data.user.user_metadata?.full_name;
+
+        if (preAssignedRole) {
+          // Pre-assigned role exists! Automatically ensure their profile exists in recruiters:
+          const { data: newProfile } = await supabase
+            .from("recruiters")
+            .insert({
+              auth_user_id: data.user.id,
+              email: data.user.email,
+              full_name: preAssignedName || data.user.email.split("@")[0],
+              role: preAssignedRole,
+              company_id: "default",
+            })
+            .select()
+            .maybeSingle();
+
+          if (newProfile) {
+            recruiter = newProfile;
+          }
+        }
+      }
+
+      if (recruiter) {
+        // Direct login to dashboard! Never show "How are you joining?" to users with credentials
+        window.location.href = "/dashboard";
+        return;
+      }
+
+      // Only brand-new unassigned signups without any pre-existing profile or role go to company onboarding
+      window.location.href = `/register?step=company_type&email=${encodeURIComponent(email.trim())}`;
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to log in.");
@@ -270,7 +294,7 @@ export default function Login() {
 
           <p className="text-center text-sm mt-6 text-muted-foreground">
             New company?{" "}
-            <Link to="/register" className="text-primary hover:underline font-medium">Register here</Link>
+            <Link to="/register?mode=company" className="text-primary hover:underline font-medium">Register here</Link>
           </p>
 
           {/* Role badges */}
