@@ -177,6 +177,11 @@ function ConfirmEmailStep({
         >
           Entered wrong email? Change email address
         </button>
+
+        <p className="text-xs text-center text-muted-foreground pt-1">
+          Already confirmed your email?{" "}
+          <Link to="/login" className="text-primary hover:underline font-medium">Log in here</Link>
+        </p>
       </div>
 
       <div className="p-3.5 rounded-xl bg-muted/40 border border-border text-xs text-muted-foreground text-left space-y-1">
@@ -261,13 +266,16 @@ export default function Register() {
   const [files, setFiles] = useState({});
   const [resendLoading, setResendLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [mode, setMode] = useState("company");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlStep = params.get("step");
     const urlEmail = params.get("email");
+    const urlMode = params.get("mode");
     if (urlStep) setStep(urlStep);
     if (urlEmail) setEmail(urlEmail);
+    if (urlMode) setMode(urlMode);
   }, []);
 
   // Countdown timer for resend email
@@ -313,14 +321,18 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      const cleanEmail = email.trim();
+      const cleanEmail = email.trim().toLowerCase();
       localStorage.setItem("pending_verification_email", cleanEmail);
+
+      const redirectUrl = window.location.origin.includes("localhost")
+        ? `${window.location.origin}/login`
+        : "https://cci-recruit.vercel.app/login";
 
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
+          emailRedirectTo: redirectUrl,
         },
       });
 
@@ -350,12 +362,16 @@ export default function Register() {
     setResendLoading(true);
     setError("");
     try {
-      const cleanEmail = email.trim();
+      const cleanEmail = email.trim().toLowerCase();
+      const redirectUrl = window.location.origin.includes("localhost")
+        ? `${window.location.origin}/login`
+        : "https://cci-recruit.vercel.app/login";
+
       const { error } = await supabase.auth.resend({
         type: "signup",
         email: cleanEmail,
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
+          emailRedirectTo: redirectUrl,
         },
       });
 
@@ -406,27 +422,63 @@ export default function Register() {
       if (!authUser) throw new Error("Please log in to continue onboarding.");
 
       if (isCeo) {
+        // Automatically allot CEO role in Auth user metadata
+        try {
+          await supabase.auth.updateUser({
+            data: { role: "ceo" },
+          });
+        } catch (metaErr) {
+          console.warn("Could not update auth user metadata:", metaErr);
+        }
         setStep("company");
       } else {
-        // Create Recruiter profile directly with pending_approval status
-        const { error: profileError } = await supabase
-          .from("recruiters")
-          .insert({
-            auth_user_id: authUser.id,
-            company_id: "default", // Join default team company
-            email: authUser.email,
-            full_name: authUser.user_metadata?.full_name || authUser.email.split("@")[0],
-            role: "recruiter",
-            account_status: "pending_approval",
+        // Automatically allot Recruiter role in Auth user metadata
+        try {
+          await supabase.auth.updateUser({
+            data: { role: "recruiter" },
           });
+        } catch (metaErr) {
+          console.warn("Could not update auth user metadata:", metaErr);
+        }
 
-        if (profileError) throw profileError;
-        window.location.href = "/pending";
+        const fullName = authUser.user_metadata?.full_name || authUser.email.split("@")[0];
+
+        // Upsert recruiter profile without non-existent status columns
+        const { data: existingRec } = await supabase
+          .from("recruiters")
+          .select("id")
+          .or(`auth_user_id.eq.${authUser.id},email.ilike.${authUser.email}`)
+          .maybeSingle();
+
+        const recruiterPayload = {
+          auth_user_id: authUser.id,
+          company_id: "default",
+          email: authUser.email,
+          full_name: fullName,
+          role: "recruiter",
+        };
+
+        if (existingRec) {
+          const { error: profileError } = await supabase
+            .from("recruiters")
+            .update(recruiterPayload)
+            .eq("id", existingRec.id);
+          if (profileError) throw profileError;
+        } else {
+          const { error: profileError } = await supabase
+            .from("recruiters")
+            .insert(recruiterPayload);
+          if (profileError) throw profileError;
+        }
+
+        window.location.href = "/dashboard";
       }
     } catch (err) {
-      setError(err.message);
+      console.error("handleRoleChoice error:", err);
+      setError(err.message || "Failed to set up profile");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleCompanySetup = async () => {
@@ -486,24 +538,51 @@ export default function Register() {
 
       if (companyError) throw companyError;
 
-      // Create CEO profile in recruiters table without status columns
-      const { error: recruiterError } = await supabase
-        .from("recruiters")
-        .insert({
-          auth_user_id: authUser.id,
-          company_id: companyData.id,
-          email: authUser.email,
-          full_name: authUser.email.split("@")[0],
-          role: "ceo",
+      // Update auth user metadata with role: 'ceo' and company_id
+      try {
+        await supabase.auth.updateUser({
+          data: { role: "ceo", company_id: companyData.id },
         });
+      } catch (metaErr) {
+        console.warn("Could not update auth user metadata:", metaErr);
+      }
 
-      if (recruiterError) throw recruiterError;
+      const fullName = authUser.user_metadata?.full_name || authUser.email.split("@")[0];
+
+      // Upsert CEO profile in recruiters table without status columns
+      const { data: existingRec } = await supabase
+        .from("recruiters")
+        .select("id")
+        .or(`auth_user_id.eq.${authUser.id},email.ilike.${authUser.email}`)
+        .maybeSingle();
+
+      const ceoPayload = {
+        auth_user_id: authUser.id,
+        company_id: companyData.id,
+        email: authUser.email,
+        full_name: fullName,
+        role: "ceo",
+      };
+
+      if (existingRec) {
+        const { error: recruiterError } = await supabase
+          .from("recruiters")
+          .update(ceoPayload)
+          .eq("id", existingRec.id);
+        if (recruiterError) throw recruiterError;
+      } else {
+        const { error: recruiterError } = await supabase
+          .from("recruiters")
+          .insert(ceoPayload);
+        if (recruiterError) throw recruiterError;
+      }
 
       window.location.href = "/dashboard";
     } catch (err) {
       setError(err.message || "Failed to set up company.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (step === "confirm_email") {

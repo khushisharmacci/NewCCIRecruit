@@ -147,15 +147,15 @@ const deleteUser = useMutation({
     const original = users.find(u => u.id === editUser.id);
     const roleChanged = original?.role !== editUser.role;
 
+    const dataPayload = {
+      role: editUser.role,
+      phone: editUser.phone || null,
+      full_name: editUser.full_name || null,
+    };
+
     await updateUser.mutateAsync({
       id: editUser.id,
-      data: {
-        role: editUser.role,
-        account_status: editUser.account_status,
-        department: editUser.department,
-        designation: editUser.designation,
-        phone: editUser.phone,
-      }
+      data: dataPayload,
     });
 
     if (roleChanged) {
@@ -170,20 +170,20 @@ const deleteUser = useMutation({
   };
 
   const handleApprove = (u) => {
-    updateUser.mutate({ id: u.id, data: { account_status: "active", role: u.role || "viewer" } });
-    logAudit({ actor: user, targetEmail: u.email, newRole: u.role || "viewer", companyId, notes: `${user?.full_name || user?.email} approved account for ${u.email}` });
+    updateUser.mutate({ id: u.id, data: { role: u.role || "recruiter" } });
+    logAudit({ actor: user, targetEmail: u.email, newRole: u.role || "recruiter", companyId, notes: `${user?.full_name || user?.email} approved account for ${u.email}` });
     toast.success(`${u.full_name || u.email} approved`);
   };
 
   const handleSuspend = (u) => {
-    updateUser.mutate({ id: u.id, data: { account_status: "suspended" } });
-    logAudit({ actor: user, targetEmail: u.email, oldRole: u.role, newRole: u.role, companyId, notes: `${user?.full_name || user?.email} suspended ${u.email}` });
+    updateUser.mutate({ id: u.id, data: { role: "viewer" } });
+    logAudit({ actor: user, targetEmail: u.email, oldRole: u.role, newRole: "viewer", companyId, notes: `${user?.full_name || user?.email} suspended ${u.email}` });
     toast.success(`${u.full_name || u.email} suspended`);
   };
 
   const handleReactivate = (u) => {
-    updateUser.mutate({ id: u.id, data: { account_status: "active" } });
-    logAudit({ actor: user, targetEmail: u.email, oldRole: u.role, newRole: u.role, companyId, notes: `${user?.full_name || user?.email} reactivated ${u.email}` });
+    updateUser.mutate({ id: u.id, data: { role: "recruiter" } });
+    logAudit({ actor: user, targetEmail: u.email, oldRole: u.role, newRole: "recruiter", companyId, notes: `${user?.full_name || user?.email} reactivated ${u.email}` });
     toast.success(`${u.full_name || u.email} reactivated`);
   };
 
@@ -201,6 +201,7 @@ const deleteUser = useMutation({
     try {
       let resultData = null;
       let success = false;
+      let lastErrorMsg = "";
 
       // 1. Attempt Vercel serverless function first
       try {
@@ -220,8 +221,11 @@ const deleteUser = useMutation({
         if (apiRes.ok && apiData?.success) {
           resultData = apiData;
           success = true;
-        } else if (apiData?.error && !apiData?.needs_config) {
-          console.warn("API returned error:", apiData.error);
+        } else if (apiData?.error) {
+          lastErrorMsg = apiData.error;
+          if (!apiData.needs_config) {
+            console.warn("API returned error:", apiData.error);
+          }
         }
       } catch (apiErr) {
         console.warn("API route not available, falling back to edge function:", apiErr);
@@ -240,12 +244,17 @@ const deleteUser = useMutation({
         });
 
         if (error) {
-          let detailedMsg = error.message || "Failed to create user";
+          let detailedMsg = error.message || lastErrorMsg || "Failed to create user";
           if (error.context) {
             try {
               const errJson = await error.context.json();
               detailedMsg = errJson.message || errJson.error || detailedMsg;
-            } catch {}
+            } catch {
+              try {
+                const errText = await error.context.text();
+                if (errText) detailedMsg = errText;
+              } catch {}
+            }
           }
           throw new Error(detailedMsg);
         }
@@ -501,6 +510,14 @@ const deleteUser = useMutation({
                 Role changes are logged in the audit trail.
               </div>
               <div className="space-y-1.5">
+                <Label>Full Name</Label>
+                <Input
+                  value={editUser.full_name || ""}
+                  onChange={e => setEditUser(p => ({ ...p, full_name: e.target.value }))}
+                  placeholder="Full Name"
+                />
+              </div>
+              <div className="space-y-1.5">
                 <Label>Role</Label>
                 <Select value={editUser.role || "viewer"} onValueChange={v => setEditUser(prev => ({ ...prev, role: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -510,25 +527,6 @@ const deleteUser = useMutation({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Account Status</Label>
-                <Select value={editUser.account_status || "active"} onValueChange={v => setEditUser(prev => ({ ...prev, account_status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="pending_approval">Pending Approval</SelectItem>
-                    <SelectItem value="suspended">Suspended</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Department</Label>
-                <Input value={editUser.department || ""} onChange={e => setEditUser(p => ({ ...p, department: e.target.value }))} placeholder="e.g. Engineering" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Designation</Label>
-                <Input value={editUser.designation || ""} onChange={e => setEditUser(p => ({ ...p, designation: e.target.value }))} placeholder="e.g. Senior Recruiter" />
               </div>
               <div className="space-y-1.5">
                 <Label>Phone</Label>
@@ -675,98 +673,130 @@ const deleteUser = useMutation({
             </DialogTitle>
           </DialogHeader>
 
-          {createdCredentials && (
-            <div className="space-y-4 text-sm mt-1">
-              <p className="text-center text-slate-300 text-xs">
-                This user account is now <strong className="text-emerald-400">Active</strong>. The user can log in immediately with the credentials below:
-              </p>
+          {createdCredentials && (() => {
+            const loginUrl = window.location.origin.includes("localhost")
+              ? "https://cci-recruit.vercel.app/login"
+              : `${window.location.origin}/login`;
 
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 font-mono text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Login URL</span>
-                  <a
-                    href={`${window.location.origin}/login`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary hover:underline break-all"
-                  >
-                    {window.location.origin}/login
-                  </a>
-                </div>
+            return (
+              <div className="space-y-4 text-sm mt-1">
+                <p className="text-center text-slate-300 text-xs">
+                  This user account is now <strong className="text-emerald-400">Active</strong>. The user can log in immediately with the credentials below:
+                </p>
 
-                <div>
-                  <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Full Name</span>
-                  <span className="text-slate-200">{createdCredentials.full_name}</span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Email Address</span>
-                    <span className="text-slate-200 font-semibold">{createdCredentials.email}</span>
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 font-mono text-xs">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Login URL</span>
+                      <a
+                        href={loginUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
+                        {loginUrl}
+                      </a>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-slate-400 hover:text-white"
+                      onClick={() => {
+                        navigator.clipboard.writeText(loginUrl);
+                        toast.success("Login URL copied!");
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Full Name</span>
+                    <span className="text-slate-200">{createdCredentials.full_name}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Email Address</span>
+                      <span className="text-slate-200 font-semibold">{createdCredentials.email}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-slate-400 hover:text-white"
+                      onClick={() => {
+                        navigator.clipboard.writeText(createdCredentials.email);
+                        toast.success("Email copied!");
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Password</span>
+                      <span className="text-amber-300 font-semibold">{createdCredentials.password}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-slate-400 hover:text-white"
+                      onClick={() => {
+                        navigator.clipboard.writeText(createdCredentials.password);
+                        toast.success("Password copied!");
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Role</span>
+                      <span className="text-emerald-300 font-sans font-medium uppercase text-xs">
+                        {ROLE_LABELS[createdCredentials.role] || createdCredentials.role}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-slate-400 hover:text-white"
+                      onClick={() => {
+                        navigator.clipboard.writeText(ROLE_LABELS[createdCredentials.role] || createdCredentials.role);
+                        toast.success("Role copied!");
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
                   <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-slate-400 hover:text-white"
+                    className="flex-1 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
                     onClick={() => {
-                      navigator.clipboard.writeText(createdCredentials.email);
-                      toast.success("Email copied!");
+                      const message = `Welcome to cciRecruit!\n\nHere are your login credentials:\nLogin URL: ${loginUrl}\nEmail: ${createdCredentials.email}\nPassword: ${createdCredentials.password}\nRole: ${ROLE_LABELS[createdCredentials.role] || createdCredentials.role}`;
+                      navigator.clipboard.writeText(message);
+                      setCopied(true);
+                      toast.success("All credentials copied to clipboard!");
+                      setTimeout(() => setCopied(false), 3000);
                     }}
                   >
-                    <Copy className="h-3.5 w-3.5" />
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {copied ? "Copied to Clipboard!" : "Copy All Credentials"}
                   </Button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Password</span>
-                    <span className="text-amber-300 font-semibold">{createdCredentials.password}</span>
-                  </div>
                   <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-slate-400 hover:text-white"
-                    onClick={() => {
-                      navigator.clipboard.writeText(createdCredentials.password);
-                      toast.success("Password copied!");
-                    }}
+                    variant="outline"
+                    className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                    onClick={() => setCredentialsOpen(false)}
                   >
-                    <Copy className="h-3.5 w-3.5" />
+                    Done
                   </Button>
                 </div>
-
-                <div>
-                  <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-sans">Role</span>
-                  <span className="text-emerald-300 font-sans font-medium uppercase text-xs">
-                    {ROLE_LABELS[createdCredentials.role] || createdCredentials.role}
-                  </span>
-                </div>
               </div>
-
-              <div className="flex gap-2 pt-2">
-                <Button
-                  className="flex-1 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
-                  onClick={() => {
-                    const message = `Welcome to cciRecruit!\n\nHere are your login credentials:\nLogin URL: ${window.location.origin}/login\nEmail: ${createdCredentials.email}\nPassword: ${createdCredentials.password}\nRole: ${ROLE_LABELS[createdCredentials.role] || createdCredentials.role}`;
-                    navigator.clipboard.writeText(message);
-                    setCopied(true);
-                    toast.success("All credentials copied to clipboard!");
-                    setTimeout(() => setCopied(false), 3000);
-                  }}
-                >
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  {copied ? "Copied to Clipboard!" : "Copy All Credentials"}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="border-slate-700 text-slate-300 hover:bg-slate-800"
-                  onClick={() => setCredentialsOpen(false)}
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

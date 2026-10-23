@@ -42,10 +42,19 @@ export default function Login() {
     const params = new URLSearchParams(window.location.search);
 
     if (hash && (hash.includes("type=signup") || hash.includes("type=email_change") || hash.includes("access_token"))) {
-      setSuccessMessage("Email verified successfully! You can now log in with your email and password.");
+      setSuccessMessage("Email verified successfully! You can now log in with your credentials.");
       window.history.replaceState(null, "", window.location.pathname);
     } else if (params.get("verified") === "true") {
       setSuccessMessage("Email verified successfully! Please log in with your credentials.");
+    } else if (hash && hash.includes("error=")) {
+      try {
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+        const errorDesc = hashParams.get("error_description") || "Verification link is invalid or has expired.";
+        setError(decodeURIComponent(errorDesc.replace(/\+/g, " ")));
+      } catch {
+        setError("Verification link is invalid or has expired.");
+      }
+      window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
 
@@ -69,39 +78,83 @@ export default function Login() {
     setLoading(true);
 
     try {
+      const cleanEmail = email.trim().toLowerCase();
       const { data, error: loginError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: cleanEmail,
         password,
       });
 
       if (loginError) throw loginError;
 
-      // Check if profile exists in public.recruiters
-      const { data: recruiter, error: lookupError } = await supabase
+      // 1. Check if profile exists in public.recruiters (by auth_user_id first, then email)
+      let recruiter = null;
+      const { data: recByAuth } = await supabase
         .from("recruiters")
         .select("*")
-        .or(`auth_user_id.eq.${data.user.id},email.ilike.${email.trim()}`)
+        .eq("auth_user_id", data.user.id)
         .maybeSingle();
 
-      if (lookupError) throw lookupError;
-
-      if (!recruiter) {
-        // Logged in but profile was not set up. Redirect to company onboarding.
-        window.location.href = `/register?step=company_type&email=${encodeURIComponent(email.trim())}`;
-      } else if (recruiter.account_status === "suspended") {
-        await supabase.auth.signOut();
-        setError("Your account has been suspended. Please contact your company administrator.");
-      } else if (recruiter.account_status === "pending_approval") {
-        window.location.href = "/pending";
+      if (recByAuth) {
+        recruiter = recByAuth;
       } else {
-        window.location.href = "/dashboard";
+        const { data: recByEmail } = await supabase
+          .from("recruiters")
+          .select("*")
+          .ilike("email", cleanEmail)
+          .maybeSingle();
+
+        if (recByEmail) {
+          recruiter = recByEmail;
+          if (!recByEmail.auth_user_id) {
+            await supabase
+              .from("recruiters")
+              .update({ auth_user_id: data.user.id })
+              .eq("id", recByEmail.id);
+          }
+        }
       }
+
+      // 2. Self-healing: If recruiter profile does not exist yet, but user was created with a role (e.g. by an Admin):
+      const preAssignedRole = data.user?.user_metadata?.role;
+      const preAssignedName = data.user?.user_metadata?.full_name;
+      const preAssignedCompanyId = data.user?.user_metadata?.company_id || "default";
+
+      if (!recruiter && data.user && preAssignedRole) {
+        try {
+          const { data: newProfile, error: insertError } = await supabase
+            .from("recruiters")
+            .insert({
+              auth_user_id: data.user.id,
+              email: data.user.email || cleanEmail,
+              full_name: preAssignedName || (data.user.email ? data.user.email.split("@")[0] : cleanEmail.split("@")[0]),
+              role: preAssignedRole,
+              company_id: preAssignedCompanyId,
+            })
+            .select()
+            .maybeSingle();
+
+          if (newProfile) {
+            recruiter = newProfile;
+          }
+        } catch (insertErr) {
+          console.warn("Self-healing recruiter insert error:", insertErr);
+        }
+      }
+
+      // 3. Direct login to dashboard! Never show "How are you joining?" to users with credentials or pre-assigned role
+      if (recruiter || preAssignedRole) {
+        window.location.href = "/dashboard";
+        return;
+      }
+
+      // 4. Only brand-new unassigned signups without any pre-existing profile or role go to company onboarding
+      window.location.href = `/register?step=company_type&email=${encodeURIComponent(cleanEmail)}`;
     } catch (err) {
       console.error(err);
       setError(err.message || "Failed to log in.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const handleGoogle = async () => {
@@ -270,7 +323,7 @@ export default function Login() {
 
           <p className="text-center text-sm mt-6 text-muted-foreground">
             New company?{" "}
-            <Link to="/register" className="text-primary hover:underline font-medium">Register here</Link>
+            <Link to="/register?mode=company" className="text-primary hover:underline font-medium">Register here</Link>
           </p>
 
           {/* Role badges */}
