@@ -42,10 +42,9 @@ console.log("RECRUITER PROFILE", recruiter);
 console.log("RECRUITER ERROR", error);
     const mergedUser = {
       ...authUser,
+      role: recruiter?.role || authUser?.user_metadata?.role || "viewer",
       ...(recruiter || {}),
     };
-console.log("RECRUITER", recruiter);
-console.log("MERGED USER", mergedUser);
     setUser(mergedUser);
   };
 
