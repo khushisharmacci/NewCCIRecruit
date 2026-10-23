@@ -49,24 +49,31 @@ export default async function handler(req, res) {
     });
 
     // 1. Check if user already exists in auth.users
-    const { data: usersData, error: listError } = await supabaseAdmin.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-
-    if (listError) {
-      console.error("List users error:", listError);
-    }
-
-    const existingAuthUser = usersData?.users?.find(
-      (u) => u.email?.toLowerCase() === cleanEmail
-    );
-
     let authUserId = null;
 
-    if (existingAuthUser) {
-      // User already exists! Update password and verify email
-      authUserId = existingAuthUser.id;
+    try {
+      const { data: usersData, error: listError } = await supabaseAdmin.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+
+      if (listError) {
+        console.error("List users error:", listError);
+      }
+
+      const existingAuthUser = usersData?.users?.find(
+        (u) => u.email?.toLowerCase() === cleanEmail
+      );
+
+      if (existingAuthUser) {
+        authUserId = existingAuthUser.id;
+      }
+    } catch (listErr) {
+      console.warn("Could not list users:", listErr);
+    }
+
+    if (authUserId) {
+      // User already exists! Update password, confirm email, and set role metadata
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
         authUserId,
         {
@@ -75,6 +82,7 @@ export default async function handler(req, res) {
           user_metadata: {
             full_name: userName,
             role: role,
+            company_id: company_id,
           },
         }
       );
@@ -92,23 +100,61 @@ export default async function handler(req, res) {
         user_metadata: {
           full_name: userName,
           role: role,
+          company_id: company_id,
         },
       });
 
       if (createError) {
-        console.error("Create user error:", createError);
-        throw createError;
+        // If user already exists in Auth, recover by looking them up and updating
+        const errMsg = (createError.message || "").toLowerCase();
+        if (errMsg.includes("already registered") || errMsg.includes("email_exists") || createError.status === 422) {
+          const { data: retryList } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          const found = retryList?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+          if (found) {
+            authUserId = found.id;
+            const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(authUserId, {
+              password: cleanPassword,
+              email_confirm: true,
+              user_metadata: {
+                full_name: userName,
+                role: role,
+                company_id: company_id,
+              },
+            });
+            if (updateErr) throw updateErr;
+          } else {
+            throw createError;
+          }
+        } else {
+          console.error("Create user error:", createError);
+          throw createError;
+        }
+      } else {
+        authUserId = createData.user.id;
       }
-
-      authUserId = createData.user.id;
     }
 
-    // 2. Upsert user in recruiters profile table (only using existing columns)
-    const { data: existingRecruiter } = await supabaseAdmin
+    // 2. Upsert user in recruiters profile table (strictly existing columns only)
+    let existingRecruiter = null;
+    const { data: recByAuth } = await supabaseAdmin
       .from("recruiters")
       .select("id")
-      .or(`auth_user_id.eq.${authUserId},email.ilike.${cleanEmail}`)
+      .eq("auth_user_id", authUserId)
       .maybeSingle();
+
+    if (recByAuth) {
+      existingRecruiter = recByAuth;
+    } else {
+      const { data: recByEmail } = await supabaseAdmin
+        .from("recruiters")
+        .select("id")
+        .ilike("email", cleanEmail)
+        .maybeSingle();
+
+      if (recByEmail) {
+        existingRecruiter = recByEmail;
+      }
+    }
 
     const recruiterPayload = {
       auth_user_id: authUserId,
