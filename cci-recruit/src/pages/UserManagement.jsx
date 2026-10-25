@@ -199,7 +199,21 @@ const deleteUser = useMutation({
     const cleanEmail = inviteEmail.trim().toLowerCase();
     const cleanPassword = invitePassword.trim() || generateStrongPassword();
     const cleanName = inviteName.trim() || cleanEmail.split("@")[0];
-    const targetCompanyId = user?.company_id || companyId || "default";
+    let targetCompanyId = user?.company_id && user?.company_id !== "default" ? user.company_id : null;
+    if (!targetCompanyId) {
+      try {
+        const { data: anyRec } = await supabase
+          .from("recruiters")
+          .select("company_id")
+          .not("company_id", "is", null)
+          .limit(1)
+          .maybeSingle();
+
+        if (anyRec?.company_id) {
+          targetCompanyId = anyRec.company_id;
+        }
+      } catch {}
+    }
 
     try {
       let success = false;
