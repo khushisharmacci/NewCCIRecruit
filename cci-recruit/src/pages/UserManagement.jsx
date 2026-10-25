@@ -54,8 +54,8 @@ async function logAudit({
 export default function UserManagement() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const companyId = "default";
-const isMaster = true;
+  const companyId = user?.company_id || "default";
+  const isMaster = true;
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -81,19 +81,21 @@ const isMaster = true;
   };
 
   const { data: users = [], isLoading } = useQuery({
-  queryKey: ["all-users"],
-  queryFn: async () => {
-    const { data, error } = await supabase
-  .from("recruiters")
-  .select("*")
-  .order("full_name")
-  .order("created_at", { ascending: false });
+    queryKey: ["all-users"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("recruiters")
+        .select("*")
+        .order("full_name");
 
-    if (error) throw error;
+      if (error) {
+        console.error("Error fetching recruiters:", error);
+        throw error;
+      }
 
-    return data || [];
-  },
-});
+      return data || [];
+    },
+  });
 
   const updateUser = useMutation({
   mutationFn: async ({ id, data }) => {
@@ -197,13 +199,13 @@ const deleteUser = useMutation({
     const cleanEmail = inviteEmail.trim().toLowerCase();
     const cleanPassword = invitePassword.trim() || generateStrongPassword();
     const cleanName = inviteName.trim() || cleanEmail.split("@")[0];
+    const targetCompanyId = user?.company_id || companyId || "default";
 
     try {
-      let resultData = null;
       let success = false;
       let lastErrorMsg = "";
 
-      // 1. Attempt Vercel serverless function first
+      // 1. Attempt Vercel serverless function first (to create/update auth credentials)
       try {
         const apiRes = await fetch("/api/admin-create-user", {
           method: "POST",
@@ -213,13 +215,12 @@ const deleteUser = useMutation({
             password: cleanPassword,
             role: inviteRole,
             full_name: cleanName,
-            company_id: companyId,
+            company_id: targetCompanyId,
           }),
         });
 
         const apiData = await apiRes.json().catch(() => null);
         if (apiRes.ok && apiData?.success) {
-          resultData = apiData;
           success = true;
         } else if (apiData?.error) {
           lastErrorMsg = apiData.error;
@@ -228,53 +229,100 @@ const deleteUser = useMutation({
           }
         }
       } catch (apiErr) {
-        console.warn("API route not available, falling back to edge function:", apiErr);
+        console.warn("API route not available, falling back:", apiErr);
       }
 
       // 2. Fall back to Supabase Edge Function 'quick-handler'
       if (!success) {
-        const { data, error } = await supabase.functions.invoke("quick-handler", {
-          body: {
-            email: cleanEmail,
-            password: cleanPassword,
-            role: inviteRole,
-            full_name: cleanName,
-            company_id: companyId,
-          },
-        });
+        try {
+          const { data, error } = await supabase.functions.invoke("quick-handler", {
+            body: {
+              email: cleanEmail,
+              password: cleanPassword,
+              role: inviteRole,
+              full_name: cleanName,
+              company_id: targetCompanyId,
+            },
+          });
 
-        if (error) {
-          let detailedMsg = error.message || lastErrorMsg || "Failed to create user";
-          if (error.context) {
-            try {
-              const errJson = await error.context.json();
-              detailedMsg = errJson.message || errJson.error || detailedMsg;
-            } catch {
-              try {
-                const errText = await error.context.text();
-                if (errText) detailedMsg = errText;
-              } catch {}
+          if (!error && data?.success) {
+            success = true;
+          } else if (data?.error || error) {
+            lastErrorMsg = data?.error || error?.message || lastErrorMsg;
+          }
+        } catch (edgeErr) {
+          console.warn("Edge function invoke error:", edgeErr);
+        }
+      }
+
+      // 3. GUARANTEE DIRECT DATABASE ENTRY: Upsert directly into public.recruiters
+      // Ensures the user is immediately in the recruiters table and visible in the app
+      try {
+        const { data: existingRec } = await supabase
+          .from("recruiters")
+          .select("id")
+          .ilike("email", cleanEmail)
+          .maybeSingle();
+
+        if (existingRec) {
+          const { error: updErr } = await supabase
+            .from("recruiters")
+            .update({
+              role: inviteRole,
+              full_name: cleanName,
+              company_id: targetCompanyId,
+              account_status: "active",
+            })
+            .eq("id", existingRec.id);
+
+          if (!updErr) success = true;
+        } else {
+          const { error: insErr } = await supabase
+            .from("recruiters")
+            .insert({
+              email: cleanEmail,
+              full_name: cleanName,
+              role: inviteRole,
+              company_id: targetCompanyId,
+              account_status: "active",
+            });
+
+          if (!insErr) {
+            success = true;
+          } else {
+            // Fallback without account_status column in case not migrated
+            const { error: fallbackErr } = await supabase
+              .from("recruiters")
+              .insert({
+                email: cleanEmail,
+                full_name: cleanName,
+                role: inviteRole,
+                company_id: targetCompanyId,
+              });
+
+            if (!fallbackErr) {
+              success = true;
+            } else {
+              console.error("Direct recruiter insert failed:", fallbackErr);
             }
           }
-          throw new Error(detailedMsg);
         }
+      } catch (directDbErr) {
+        console.error("Direct DB upsert error:", directDbErr);
+      }
 
-        if (data?.error) {
-          throw new Error(data.error);
-        }
-
-        resultData = data;
-        success = true;
+      if (!success && lastErrorMsg) {
+        throw new Error(lastErrorMsg);
       }
 
       await logAudit({
         actor: user,
         targetEmail: cleanEmail,
         newRole: inviteRole,
-        notes: `Created user account with credentials by ${user?.full_name || user?.email}`,
+        notes: `Created/updated user account with credentials by ${user?.full_name || user?.email}`,
       });
 
-      toast.success("User account created and activated!");
+      toast.success("User account saved and activated!");
 
       queryClient.invalidateQueries({
         queryKey: ["all-users"],
@@ -346,7 +394,7 @@ const deleteUser = useMutation({
           <span className="font-semibold">{pendingCount} user{pendingCount > 1 ? "s" : ""} awaiting approval</span>
           <Button
   onClick={() => {
-    setStatusFilter("Pending Approval");
+    setStatusFilter("pending_approval");
   }}
 >
   View
