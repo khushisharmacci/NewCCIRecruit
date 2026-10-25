@@ -46,19 +46,37 @@ export const AuthProvider = ({ children }) => {
       const userMeta = authUser.user_metadata || {};
       const fullName = userMeta.full_name || userMeta.name || authUser.email?.split("@")[0] || "User";
       const initialRole = userMeta.role || "recruiter";
-      const companyId = userMeta.company_id || "default";
+      
+      // Look up real company UUID (never use string 'default' because company_id is a UUID column)
+      let companyId = userMeta.company_id && userMeta.company_id !== "default" ? userMeta.company_id : null;
+      if (!companyId) {
+        try {
+          const { data: recWithComp } = await supabase
+            .from("recruiters")
+            .select("company_id")
+            .not("company_id", "is", null)
+            .limit(1)
+            .maybeSingle();
+
+          if (recWithComp?.company_id) {
+            companyId = recWithComp.company_id;
+          }
+        } catch {}
+      }
 
       try {
+        const payload = {
+          auth_user_id: authUser.id,
+          email: authUser.email,
+          full_name: fullName,
+          role: initialRole,
+          account_status: "active",
+        };
+        if (companyId) payload.company_id = companyId;
+
         const { data: created, error: insertError } = await supabase
           .from("recruiters")
-          .insert({
-            auth_user_id: authUser.id,
-            email: authUser.email,
-            full_name: fullName,
-            role: initialRole,
-            company_id: companyId,
-            account_status: "active",
-          })
+          .insert(payload)
           .select()
           .maybeSingle();
 
@@ -66,15 +84,10 @@ export const AuthProvider = ({ children }) => {
           recruiter = created;
         } else if (insertError) {
           // Retry without account_status if column does not exist
+          delete payload.account_status;
           const { data: fallbackCreated } = await supabase
             .from("recruiters")
-            .insert({
-              auth_user_id: authUser.id,
-              email: authUser.email,
-              full_name: fullName,
-              role: initialRole,
-              company_id: companyId,
-            })
+            .insert(payload)
             .select()
             .maybeSingle();
 
