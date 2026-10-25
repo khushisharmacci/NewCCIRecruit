@@ -123,24 +123,56 @@ export default function UserManagement() {
   },
 });
 const deleteUser = useMutation({
-  mutationFn: async (id) => {
-    const { error } = await supabase
-      .from("recruiters")
-      .delete()
-      .eq("id", id);
+  mutationFn: async (target) => {
+    const targetId = typeof target === "object" ? target.id : target;
+    const targetEmail = typeof target === "object" ? target.email : null;
 
+    let query = supabase.from("recruiters").delete();
+    if (targetId) {
+      query = query.eq("id", targetId);
+    } else if (targetEmail) {
+      query = query.ilike("email", targetEmail);
+    }
+
+    const { error } = await query;
     if (error) throw error;
+    return target;
   },
 
-  onSuccess: () => {
+  onMutate: async (target) => {
+    await queryClient.cancelQueries({ queryKey: ["all-users"] });
+    const previousUsers = queryClient.getQueryData(["all-users"]) || [];
+
+    const targetId = typeof target === "object" ? target.id : target;
+    const targetEmail = typeof target === "object" ? target.email : null;
+
+    queryClient.setQueryData(["all-users"], (old = []) =>
+      old.filter((u) => u.id !== targetId && (!targetEmail || u.email?.toLowerCase() !== targetEmail.toLowerCase()))
+    );
+
+    return { previousUsers };
+  },
+
+  onSuccess: (target) => {
     queryClient.invalidateQueries({
       queryKey: ["all-users"],
     });
 
-    toast.success("User deleted");
+    const targetEmail = typeof target === "object" ? target.email : "";
+    logAudit({
+      actor: user,
+      targetEmail: targetEmail,
+      action: "delete_user",
+      notes: `${user?.full_name || user?.email} deleted user ${targetEmail}`,
+    });
+
+    toast.success("User deleted successfully");
   },
 
-  onError: (error) => {
+  onError: (error, target, context) => {
+    if (context?.previousUsers) {
+      queryClient.setQueryData(["all-users"], context.previousUsers);
+    }
     toast.error(error.message || "Failed to delete user");
   },
 });
@@ -536,10 +568,10 @@ const deleteUser = useMutation({
   onClick={() => {
     if (
       window.confirm(
-        `Delete ${u.full_name || u.email}?`
+        `Delete ${u.full_name || u.email}? This action cannot be undone.`
       )
     ) {
-      deleteUser.mutate(u.id);
+      deleteUser.mutate(u);
     }
   }}
 >
